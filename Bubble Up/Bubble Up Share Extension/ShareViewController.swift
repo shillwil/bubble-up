@@ -1,10 +1,6 @@
 import UIKit
 import SwiftUI
 import UniformTypeIdentifiers
-import PDFKit
-import LinkPresentation
-import ImageIO
-import AVFoundation
 
 class ShareViewController: UIViewController {
 
@@ -21,12 +17,7 @@ class ShareViewController: UIViewController {
             stateHolder: stateHolder,
             onSave: { [weak self] url, title, tags, localFileName, contentMimeType in
                 self?.saveItem(url: url, title: title, tags: tags, localFileName: localFileName, contentMimeType: contentMimeType)
-                // For links, generate summary before closing so it's ready when the app opens
-                if let urlString = url, !urlString.isEmpty {
-                    self?.generateSummaryThenClose(url: urlString, title: title)
-                } else {
-                    self?.close()
-                }
+                self?.close()
             },
             onCancel: { [weak self] in
                 self?.close()
@@ -77,13 +68,11 @@ class ShareViewController: UIViewController {
 
                 // 4. Check for URLs
                 if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
-                    provider.loadItem(forTypeIdentifier: UTType.url.identifier) { [weak self] item, _ in
+                    provider.loadItem(forTypeIdentifier: UTType.url.identifier) { item, _ in
                         if let url = item as? URL {
                             DispatchQueue.main.async {
                                 stateHolder.url = url.absoluteString
                                 stateHolder.contentType = "link"
-                                stateHolder.previewState = .loading
-                                self?.fetchLinkPreview(for: url, stateHolder: stateHolder)
                             }
                         }
                     }
@@ -92,13 +81,11 @@ class ShareViewController: UIViewController {
 
                 // 5. Check for plain text (fallback)
                 if provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) {
-                    provider.loadItem(forTypeIdentifier: UTType.plainText.identifier) { [weak self] item, _ in
+                    provider.loadItem(forTypeIdentifier: UTType.plainText.identifier) { item, _ in
                         if let text = item as? String, let url = URL(string: text), url.scheme != nil {
                             DispatchQueue.main.async {
                                 stateHolder.url = text
                                 stateHolder.contentType = "link"
-                                stateHolder.previewState = .loading
-                                self?.fetchLinkPreview(for: url, stateHolder: stateHolder)
                             }
                         }
                     }
@@ -109,22 +96,12 @@ class ShareViewController: UIViewController {
     }
 
     private func handleFileAttachment(provider: NSItemProvider, utType: UTType, contentType: String, mimeType: String, ext: String, stateHolder: ShareStateHolder) {
-        DispatchQueue.main.async {
-            stateHolder.previewState = .loading
-        }
-
         provider.loadFileRepresentation(forTypeIdentifier: utType.identifier) { [weak self] url, error in
-            guard let sourceURL = url else {
-                DispatchQueue.main.async { stateHolder.previewState = .failed }
-                return
-            }
+            guard let sourceURL = url else { return }
 
             // Copy file to App Group shared container
             let fileName = UUID().uuidString + "." + ext
-            guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.com.shillwil.bubble-up") else {
-                DispatchQueue.main.async { stateHolder.previewState = .failed }
-                return
-            }
+            guard let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.com.shillwil.bubble-up") else { return }
 
             let sharedDir = containerURL.appendingPathComponent("SharedFiles")
             try? FileManager.default.createDirectory(at: sharedDir, withIntermediateDirectories: true)
@@ -132,117 +109,11 @@ class ShareViewController: UIViewController {
             let destURL = sharedDir.appendingPathComponent(fileName)
             try? FileManager.default.copyItem(at: sourceURL, to: destURL)
 
-            // Generate preview thumbnail from the copied file
-            let previewImage = self?.generatePreview(for: contentType, fileURL: destURL)
-
             DispatchQueue.main.async {
                 stateHolder.contentType = contentType
                 stateHolder.localFileName = fileName
                 stateHolder.title = sourceURL.lastPathComponent
-                if let image = previewImage {
-                    stateHolder.previewState = .loaded(image)
-                } else {
-                    stateHolder.previewState = .failed
-                }
             }
-        }
-    }
-
-    // MARK: - Preview Generation
-
-    private func generatePreview(for contentType: String, fileURL: URL) -> UIImage? {
-        switch contentType {
-        case "pdf":
-            return generatePDFPreview(from: fileURL)
-        case "image":
-            return downsampledImage(from: fileURL, maxPixelSize: 800)
-        case "video":
-            return generateVideoPreview(from: fileURL)
-        default:
-            return nil
-        }
-    }
-
-    private func generatePDFPreview(from url: URL) -> UIImage? {
-        guard let document = PDFDocument(url: url),
-              let firstPage = document.page(at: 0) else { return nil }
-        return firstPage.thumbnail(of: CGSize(width: 400, height: 600), for: .mediaBox)
-    }
-
-    private func downsampledImage(from url: URL, maxPixelSize: CGFloat) -> UIImage? {
-        let sourceOptions: [CFString: Any] = [kCGImageSourceShouldCache: false]
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions as CFDictionary) else { return nil }
-
-        let downsampleOptions: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceShouldCacheImmediately: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
-        ]
-        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions as CFDictionary) else { return nil }
-        return UIImage(cgImage: cgImage)
-    }
-
-    private func generateVideoPreview(from url: URL) -> UIImage? {
-        let asset = AVURLAsset(url: url)
-        let imageGenerator = AVAssetImageGenerator(asset: asset)
-        imageGenerator.appliesPreferredTrackTransform = true
-        imageGenerator.maximumSize = CGSize(width: 600, height: 600)
-
-        do {
-            let cgImage = try imageGenerator.copyCGImage(at: .zero, actualTime: nil)
-            return UIImage(cgImage: cgImage)
-        } catch {
-            return nil
-        }
-    }
-
-    private func fetchLinkPreview(for url: URL, stateHolder: ShareStateHolder) {
-        Task { @MainActor in
-            let provider = LPMetadataProvider()
-            provider.timeout = 8
-
-            do {
-                let metadata = try await provider.startFetchingMetadata(for: url)
-
-                if let title = metadata.title, stateHolder.title.isEmpty {
-                    stateHolder.title = title
-                }
-
-                if let imageProvider = metadata.imageProvider {
-                    let data = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data?, Error>) in
-                        imageProvider.loadDataRepresentation(forTypeIdentifier: "public.image") { data, error in
-                            if let error {
-                                continuation.resume(throwing: error)
-                            } else {
-                                continuation.resume(returning: data)
-                            }
-                        }
-                    }
-                    if let data, let image = UIImage(data: data) {
-                        stateHolder.previewState = .loaded(image)
-                        return
-                    }
-                }
-                stateHolder.previewState = .failed
-            } catch {
-                stateHolder.previewState = .failed
-            }
-        }
-    }
-
-    // MARK: - Background Summary
-
-    private func generateSummaryThenClose(url: String, title: String?) {
-        Task {
-            if let result = await ShareExtensionSummarizer.generateSummary(url: url, title: title) {
-                SharedPendingItemStore.updateLatestWithSummary(
-                    summary: result.summary,
-                    bullets: result.bullets,
-                    estimatedReadTime: result.estimatedReadTime
-                )
-            }
-            await MainActor.run { self.close() }
         }
     }
 
@@ -258,15 +129,6 @@ class ShareViewController: UIViewController {
     }
 }
 
-// MARK: - Preview state
-
-enum PreviewState {
-    case idle
-    case loading
-    case loaded(UIImage)
-    case failed
-}
-
 // MARK: - Observable state holder that bridges UIKit -> SwiftUI
 
 @Observable
@@ -275,7 +137,6 @@ class ShareStateHolder {
     var title: String = ""
     var contentType: String = "link"  // "link", "pdf", "image", "video"
     var localFileName: String? = nil
-    var previewState: PreviewState = .idle
 }
 
 // MARK: - Wrapper view that converts @Observable to @Binding
@@ -291,7 +152,6 @@ struct ShareExtensionContentView: View {
             sharedTitle: $stateHolder.title,
             contentType: $stateHolder.contentType,
             localFileName: $stateHolder.localFileName,
-            previewState: stateHolder.previewState,
             onSave: onSave,
             onCancel: onCancel
         )

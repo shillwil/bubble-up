@@ -5,7 +5,6 @@ struct ShareExtensionView: View {
     @Binding var sharedTitle: String
     @Binding var contentType: String
     @Binding var localFileName: String?
-    var previewState: PreviewState
     var onSave: (String?, String?, [String], String?, String?) -> Void
     var onCancel: () -> Void
 
@@ -13,19 +12,18 @@ struct ShareExtensionView: View {
     @State private var isSaved = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Content preview area
-            ContentPreviewView(
-                previewState: previewState,
-                contentType: contentType,
-                title: sharedTitle,
-                onTap: { onCancel() }
-            )
+        ZStack {
+            // Dimmed background
+            Color.black.opacity(0.4)
+                .ignoresSafeArea()
+                .onTapGesture { onCancel() }
 
             // Bottom sheet
-            sheetContent
+            VStack {
+                Spacer()
+                sheetContent
+            }
         }
-        .ignoresSafeArea(edges: .top)
     }
 
     private var sheetContent: some View {
@@ -42,7 +40,7 @@ struct ShareExtensionView: View {
             .padding(.bottom, 20)
 
             // Title
-            Text(isSaved ? "Saved! Generating summary..." : contentType == "link" ? "Saving to Library..." : "Saving \(contentType.capitalized)...")
+            Text(isSaved ? "Saved!" : contentType == "link" ? "Saving to Library..." : "Saving \(contentType.capitalized)...")
                 .font(.system(size: 24, weight: .bold, design: .serif))
                 .foregroundColor(Color(hex: 0x111111))
                 .padding(.bottom, 20)

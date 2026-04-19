@@ -81,24 +81,13 @@ struct OpenAISummaryProvider: SummaryProvider {
 
     private func buildLinkSummaryPrompt(content: String, title: String?, url: String) -> String {
         """
-        Summarize the following article. Return your response as a JSON object with this exact structure:
-        {
-            "summary": "A 1-2 sentence summary stating the article's core argument or finding",
-            "bullets": ["bullet point 1", "bullet point 2", "bullet point 3"],
-            "estimatedReadTime": 5
-        }
-
-        Rules:
-        - The summary MUST state what the article argues, claims, or reveals — not just what it's "about." Include specific names, numbers, or concrete details when available. Bad: "This article discusses the impact of AI on healthcare." Good: "Researchers at Johns Hopkins found that GPT-4 diagnosed rare skin conditions with 92% accuracy, outperforming dermatology residents."
-        - Provide exactly 3 bullet points. Each should highlight a surprising, non-obvious, or actionable insight — not a generic description. Prioritize takeaways the reader couldn't guess from the title alone.
-        - estimatedReadTime is in minutes, estimated based on article length (~250 words per minute)
-        - The reader saved this article to read later. The summary should help them decide when to prioritize reading the full piece.
-        - Return ONLY the JSON object, no other text
+        Summarize the following article. Return a JSON object:
+        {"summary": "1-2 sentences", "bullets": ["point 1", "point 2", "point 3"], "estimatedReadTime": 5}
 
         Title: \(title ?? "Unknown")
         URL: \(url)
 
-        Article content:
+        Content:
         \(String(content.prefix(8000)))
         """
     }

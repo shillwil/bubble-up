@@ -10,11 +10,6 @@ struct SharedPendingItem: Codable {
     let localFileName: String?    // Filename in App Group shared container
     let contentMimeType: String?  // MIME type for file-based items
 
-    // Pre-generated summary (filled by share extension if BYOK key is available)
-    var summary: String?
-    var summaryBullets: [String]?
-    var estimatedReadTime: Int?
-
     init(url: String? = nil, title: String? = nil, tags: [String] = [], localFileName: String? = nil, contentMimeType: String? = nil) {
         self.url = url
         self.title = title
