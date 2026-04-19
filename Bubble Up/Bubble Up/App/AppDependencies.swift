@@ -10,6 +10,7 @@ final class AppDependencies {
     let authService: AuthService
     let repository: LibraryItemsRepository
     let requestScheduler: RequestScheduler
+    let syncEngine: SyncEngine
 
     init(persistenceController: PersistenceController = .shared) {
         self.persistenceController = persistenceController
@@ -23,11 +24,16 @@ final class AppDependencies {
             persistenceController: persistenceController,
             keychainService: keychainService
         )
+        self.syncEngine = SyncEngine(
+            persistenceController: persistenceController,
+            authService: authService
+        )
 
         self.repository.requestScheduler = requestScheduler
+        self.repository.syncEngine = syncEngine
     }
 
-    /// Starts background services. Restores auth session FIRST, then starts scheduler.
+    /// Starts background services. Restores auth session FIRST, then starts scheduler and sync.
     func startServices() {
         // Sync BYOK API keys to App Group so share extension can access them
         keychainService.syncKeysToAppGroup()
@@ -39,8 +45,13 @@ final class AppDependencies {
             // 2. Import any items from Share Extension
             repository.importPendingSharedItems()
 
-            // 3. NOW start processing the queue (session is ready)
+            // 3. Start processing the queue (session is ready)
             await requestScheduler.resumePendingRequests()
+
+            // 4. Sync with Supabase if authenticated
+            if authService.isAuthenticated {
+                await syncEngine.performFullSync()
+            }
         }
     }
 }
