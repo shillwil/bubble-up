@@ -13,6 +13,7 @@ struct BookSummaryView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
     @State private var showSavedConfirmation = false
+    @State private var readingProgress: Double = 0
 
     init(itemID: UUID, showSaveButton: Bool = true, onDone: (() -> Void)? = nil) {
         self.itemID = itemID
@@ -29,39 +30,50 @@ struct BookSummaryView: View {
     var body: some View {
         Group {
             if let item {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 24) {
-                        header(for: item)
-                        summaryContent(for: item)
+                ZStack(alignment: .top) {
+                    ReadingProgressBar(progress: readingProgress)
+                        .zIndex(1)
 
-                        // Save / Done button (shown during generation flow, not when viewing from library)
-                        if showSaveButton && item.summaryStatusEnum == .completed {
-                            Button {
-                                showSavedConfirmation = true
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                                    if let onDone {
-                                        onDone()
-                                    } else {
-                                        dismiss()
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 24) {
+                            header(for: item)
+                            summaryContent(for: item)
+
+                            // Save / Done button (shown during generation flow, not when viewing from library)
+                            if showSaveButton && item.summaryStatusEnum == .completed {
+                                Button {
+                                    showSavedConfirmation = true
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                        if let onDone {
+                                            onDone()
+                                        } else {
+                                            dismiss()
+                                        }
                                     }
+                                } label: {
+                                    Text(showSavedConfirmation ? "SAVED TO LIBRARY" : "SAVE & CLOSE")
+                                        .font(.buttonText())
+                                        .tracking(1.5)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 16)
+                                        .background(showSavedConfirmation ? Color.green : BubbleUpTheme.primary)
+                                        .foregroundColor(.white)
+                                        .clipShape(RoundedRectangle(cornerRadius: BubbleUpTheme.cornerRadiusSm))
+                                        .animation(.easeInOut, value: showSavedConfirmation)
                                 }
-                            } label: {
-                                Text(showSavedConfirmation ? "SAVED TO LIBRARY" : "SAVE & CLOSE")
-                                    .font(.buttonText())
-                                    .tracking(1.5)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 16)
-                                    .background(showSavedConfirmation ? Color.green : BubbleUpTheme.primary)
-                                    .foregroundColor(.white)
-                                    .clipShape(RoundedRectangle(cornerRadius: BubbleUpTheme.cornerRadiusSm))
-                                    .animation(.easeInOut, value: showSavedConfirmation)
+                                .disabled(showSavedConfirmation)
                             }
-                            .disabled(showSavedConfirmation)
                         }
+                        .padding(.horizontal, BubbleUpTheme.paddingHorizontal)
+                        .padding(.top, 24)
+                        .padding(.bottom, 60)
                     }
-                    .padding(.horizontal, BubbleUpTheme.paddingHorizontal)
-                    .padding(.top, 24)
-                    .padding(.bottom, 60)
+                    .onScrollGeometryChange(for: Double.self) { geo in
+                        let contentHeight = geo.contentSize.height - geo.containerSize.height
+                        return contentHeight > 0 ? geo.contentOffset.y / contentHeight : 0
+                    } action: { _, newValue in
+                        readingProgress = min(max(newValue, 0), 1)
+                    }
                 }
             } else {
                 LoadingStateView("Loading summary")

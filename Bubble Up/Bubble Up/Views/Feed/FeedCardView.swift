@@ -72,6 +72,8 @@ struct FeedCardView: View {
                 ImageDetailView(item: item)
             } else if item.itemTypeEnum == .video {
                 VideoDetailView(item: item)
+            } else if item.itemTypeEnum == .pdf {
+                PDFDetailView(item: item)
             } else {
                 ArticleDetailView(item: item)
             }
