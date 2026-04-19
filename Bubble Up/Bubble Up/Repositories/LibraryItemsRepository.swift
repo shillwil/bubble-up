@@ -9,6 +9,7 @@ final class LibraryItemsRepository {
     private let viewContext: NSManagedObjectContext
     private let backgroundContext: NSManagedObjectContext
     var requestScheduler: RequestScheduler?
+    var syncEngine: SyncEngine?
 
     init(viewContext: NSManagedObjectContext, backgroundContext: NSManagedObjectContext) {
         self.viewContext = viewContext
@@ -82,6 +83,7 @@ final class LibraryItemsRepository {
         )
 
         saveViewContext()
+        notifySync()
 
         // Notify scheduler to process the new request
         if let scheduler = requestScheduler {
@@ -134,6 +136,7 @@ final class LibraryItemsRepository {
         )
 
         saveViewContext()
+        notifySync()
 
         if let scheduler = requestScheduler {
             Task { await scheduler.notifyNewRequest() }
@@ -147,25 +150,33 @@ final class LibraryItemsRepository {
     func updateTitle(_ item: LibraryItem, title: String) {
         item.title = title
         item.updatedAt = Date()
+        markForSync(item)
         saveViewContext()
+        notifySync()
     }
 
     func updateTags(_ item: LibraryItem, tags: [String]) {
         item.tagsArray = tags
         item.updatedAt = Date()
+        markForSync(item)
         saveViewContext()
+        notifySync()
     }
 
     func markAsRead(_ item: LibraryItem) {
         item.isRead = true
         item.updatedAt = Date()
+        markForSync(item)
         saveViewContext()
+        notifySync()
     }
 
     func addComment(to item: LibraryItem, text: String) {
         let _ = Comment(context: viewContext, text: text, libraryItem: item)
         item.updatedAt = Date()
+        markForSync(item)
         saveViewContext()
+        notifySync()
     }
 
     /// Called by RequestScheduler when an AI summary completes.
@@ -190,8 +201,10 @@ final class LibraryItemsRepository {
             item.estimatedReadTime = Int16(readTime)
         }
         item.updatedAt = Date()
+        markForSync(item)
 
         try? ctx.save()
+        notifySync()
     }
 
     /// Called by RequestScheduler when a book summary completes.
@@ -224,8 +237,10 @@ final class LibraryItemsRepository {
                 libraryItem: item
             )
         }
+        markForSync(item)
 
         try? ctx.save()
+        notifySync()
     }
 
     func markSummaryFailed(itemID: UUID, context: NSManagedObjectContext? = nil) {
@@ -243,15 +258,14 @@ final class LibraryItemsRepository {
     // MARK: - Delete
 
     func deleteItem(_ item: LibraryItem) {
-        // Clean up local file if present
-        if let localFilePath = item.localFilePath {
-            if let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: Config.appGroupIdentifier) {
-                let fileURL = containerURL.appendingPathComponent("SharedFiles").appendingPathComponent(localFilePath)
-                try? FileManager.default.removeItem(at: fileURL)
-            }
-        }
-        viewContext.delete(item)
+        // Soft-delete: mark for sync, then the sync engine will push deleted_at
+        // and hard-delete from Core Data after server confirmation.
+        // If sync engine is not available (offline), the item is hidden from views
+        // via FetchRequest predicate and cleaned up on next sync.
+        item.syncStatusEnum = .pendingDelete
+        item.updatedAt = Date()
         saveViewContext()
+        notifySync()
     }
 
     // MARK: - Fetch Helpers
@@ -461,6 +475,23 @@ final class LibraryItemsRepository {
             try viewContext.save()
         } catch {
             print("Failed to save view context: \(error)")
+        }
+    }
+
+    // MARK: - Sync Helpers
+
+    /// Marks an item for sync upload/update based on its current sync status.
+    private func markForSync(_ item: LibraryItem) {
+        if item.syncStatusEnum == .synced {
+            item.syncStatusEnum = .pendingUpdate
+        }
+        // Items that are already pendingUpload stay that way
+    }
+
+    /// Notifies the sync engine to push changes (debounced).
+    private func notifySync() {
+        if let engine = syncEngine {
+            Task { await engine.enqueuePush() }
         }
     }
 }

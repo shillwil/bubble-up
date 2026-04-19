@@ -26,6 +26,8 @@ extension LibraryItem {
     @NSManaged public var contentMimeType: String?
     @NSManaged public var localFilePath: String?
     @NSManaged public var summaryStatus: String?
+    @NSManaged public var syncStatus: String?
+    @NSManaged public var thumbnailStoragePath: String?
     @NSManaged public var pages: NSSet?
     @NSManaged public var comments: NSSet?
 }

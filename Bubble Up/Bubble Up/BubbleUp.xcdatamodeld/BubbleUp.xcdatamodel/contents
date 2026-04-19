@@ -10,6 +10,8 @@
         <attribute name="itemType" attributeType="String" defaultValueString="link"/>
         <attribute name="localFilePath" optional="YES" attributeType="String"/>
         <attribute name="rawContent" optional="YES" attributeType="String"/>
+        <attribute name="syncStatus" optional="YES" attributeType="String" defaultValueString="pendingUpload"/>
+        <attribute name="thumbnailStoragePath" optional="YES" attributeType="String"/>
         <attribute name="sourceDisplayName" optional="YES" attributeType="String"/>
         <attribute name="summary" optional="YES" attributeType="String"/>
         <attribute name="summaryBullets" optional="YES" attributeType="Transformable" valueTransformerName="NSSecureUnarchiveFromDataTransformerName" customClassName="[String]"/>

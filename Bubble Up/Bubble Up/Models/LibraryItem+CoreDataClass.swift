@@ -43,6 +43,11 @@ public class LibraryItem: NSManagedObject {
         set { summaryStatus = newValue.rawValue }
     }
 
+    var syncStatusEnum: SyncStatus {
+        get { SyncStatus(rawValue: syncStatus ?? "pendingUpload") ?? .pendingUpload }
+        set { syncStatus = newValue.rawValue }
+    }
+
     var tagsArray: [String] {
         get { tags as? [String] ?? [] }
         set { tags = newValue as NSObject }

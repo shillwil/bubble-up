@@ -33,6 +33,10 @@ struct Bubble_UpApp: App {
                 dependencies.repository.importPendingSharedItems()
                 // Re-process any pending requests when returning to foreground
                 Task { await dependencies.requestScheduler.notifyNewRequest() }
+                // Sync with Supabase when returning to foreground
+                if dependencies.authService.isAuthenticated {
+                    Task { await dependencies.syncEngine.performFullSync() }
+                }
             }
         }
     }

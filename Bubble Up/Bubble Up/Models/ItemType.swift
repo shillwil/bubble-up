@@ -38,6 +38,14 @@ enum RequestStatus: String, Sendable {
     case failed
 }
 
+/// Sync status for cross-device synchronization.
+enum SyncStatus: String, Sendable {
+    case synced
+    case pendingUpload
+    case pendingUpdate
+    case pendingDelete
+}
+
 /// Result of attempting to save a link or book summary.
 enum SaveResult {
     case created(UUID)
