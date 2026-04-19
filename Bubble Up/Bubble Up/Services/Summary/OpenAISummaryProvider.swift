@@ -11,8 +11,8 @@ struct OpenAISummaryProvider: SummaryProvider {
         self.session = session
     }
 
-    func generateLinkSummary(content: String, title: String?, url: String) async throws -> SummaryResult {
-        let prompt = buildLinkSummaryPrompt(content: content, title: title, url: url)
+    func generateLinkSummary(content: String, title: String?, url: String, userNotes: String?) async throws -> SummaryResult {
+        let prompt = buildLinkSummaryPrompt(content: content, title: title, url: url, userNotes: userNotes)
         let responseText = try await callOpenAI(
             model: "gpt-4o",
             systemPrompt: "You are a concise article summarizer. Always respond with valid JSON only.",
@@ -79,17 +79,42 @@ struct OpenAISummaryProvider: SummaryProvider {
 
     // MARK: - Prompts (shared format with other providers)
 
-    private func buildLinkSummaryPrompt(content: String, title: String?, url: String) -> String {
+    private func buildLinkSummaryPrompt(content: String, title: String?, url: String, userNotes: String?) -> String {
+        var prompt = """
+        Summarize the following article. Return your response as a JSON object with this exact structure:
+        {
+            "summary": "A 1-2 sentence summary stating the article's core argument or finding",
+            "bullets": ["bullet point 1", "bullet point 2", "bullet point 3"],
+            "estimatedReadTime": 5
+        }
+
+        Rules:
+        - The summary MUST state what the article argues, claims, or reveals — not just what it's "about." Include specific names, numbers, or concrete details when available. Bad: "This article discusses the impact of AI on healthcare." Good: "Researchers at Johns Hopkins found that GPT-4 diagnosed rare skin conditions with 92% accuracy, outperforming dermatology residents."
+        - Provide exactly 3 bullet points. Each should highlight a surprising, non-obvious, or actionable insight — not a generic description. Prioritize takeaways the reader couldn't guess from the title alone.
+        - estimatedReadTime is in minutes, estimated based on article length (~250 words per minute)
+        - The reader saved this article to read later. The summary should help them decide when to prioritize reading the full piece.
+        - Return ONLY the JSON object, no other text
         """
-        Summarize the following article. Return a JSON object:
-        {"summary": "1-2 sentences", "bullets": ["point 1", "point 2", "point 3"], "estimatedReadTime": 5}
+
+        if let notes = userNotes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            prompt += """
+
+            The reader noted why they saved this: "\(notes)"
+            Tailor your summary and bullet points toward their stated interest while still accurately representing the article.
+            """
+        }
+
+        prompt += """
+
 
         Title: \(title ?? "Unknown")
         URL: \(url)
 
-        Content:
+        Article content:
         \(String(content.prefix(8000)))
         """
+
+        return prompt
     }
 
     private func buildBookSummaryPrompt(title: String, author: String?, length: SummaryLength) -> String {

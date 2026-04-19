@@ -6,10 +6,11 @@ struct ShareExtensionView: View {
     @Binding var contentType: String
     @Binding var localFileName: String?
     var previewState: PreviewState
-    var onSave: (String?, String?, [String], String?, String?) -> Void
+    var onSave: (String?, String?, [String], String?, String?, String?) -> Void
     var onCancel: () -> Void
 
     @State private var tagsText: String = ""
+    @State private var notesText: String = ""
     @State private var isSaved = false
 
     var body: some View {
@@ -42,7 +43,7 @@ struct ShareExtensionView: View {
             .padding(.bottom, 20)
 
             // Title
-            Text(isSaved ? "Saved!" : contentType == "link" ? "Saving to Library..." : "Saving \(contentType.capitalized)...")
+            Text(isSaved ? "Saved! Generating summary..." : contentType == "link" ? "Saving to Library..." : "Saving \(contentType.capitalized)...")
                 .font(.system(size: 24, weight: .bold, design: .serif))
                 .foregroundColor(Color(hex: 0x111111))
                 .padding(.bottom, 20)
@@ -93,6 +94,19 @@ struct ShareExtensionView: View {
                 }
                 .padding(.bottom, 16)
 
+            // Notes input
+            TextField("Add a note (optional)", text: $notesText, axis: .vertical)
+                .font(.system(size: 15))
+                .foregroundColor(Color(hex: 0x1A1A1A))
+                .lineLimit(1...3)
+                .padding(.bottom, 8)
+                .overlay(alignment: .bottom) {
+                    Rectangle()
+                        .fill(Color(hex: 0xE5E4E0))
+                        .frame(height: 1)
+                }
+                .padding(.bottom, 16)
+
             // Save button
             Button {
                 let tags = tagsText
@@ -108,7 +122,7 @@ struct ShareExtensionView: View {
                     }
                 }()
                 let urlToSave = contentType == "link" ? sharedURL : nil
-                onSave(urlToSave, sharedTitle.isEmpty ? nil : sharedTitle, tags, localFileName, mimeType)
+                onSave(urlToSave, sharedTitle.isEmpty ? nil : sharedTitle, tags, localFileName, mimeType, notesText.isEmpty ? nil : notesText)
                 isSaved = true
             } label: {
                 Text("SAVE")

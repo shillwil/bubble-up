@@ -5,12 +5,15 @@ import Supabase
 struct SupabaseSummaryProvider: SummaryProvider {
     let providerName = "Supabase (F&F)"
 
-    func generateLinkSummary(content: String, title: String?, url: String) async throws -> SummaryResult {
-        let body: [String: String] = [
+    func generateLinkSummary(content: String, title: String?, url: String, userNotes: String?) async throws -> SummaryResult {
+        var body: [String: String] = [
             "url": url,
             "title": title ?? "",
             "content": String(content.prefix(8000))
         ]
+        if let notes = userNotes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            body["userNotes"] = notes
+        }
 
         let result: SummaryResult = try await SupabaseClientProvider.shared.functions.invoke(
             "summarize-link",

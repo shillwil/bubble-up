@@ -83,4 +83,19 @@ final class KeychainService: @unchecked Sendable {
     func hasAnyBYOKKey() -> Bool {
         Key.allCases.contains { has($0) }
     }
+
+    // MARK: - Share Extension Sync
+
+    /// Syncs BYOK API keys to App Group UserDefaults so the share extension can read them.
+    /// Call on app launch and whenever keys change.
+    func syncKeysToAppGroup() {
+        guard let defaults = UserDefaults(suiteName: "group.com.shillwil.bubble-up") else { return }
+        for key in Key.allCases {
+            if let value = get(key) {
+                defaults.set(value, forKey: key.rawValue)
+            } else {
+                defaults.removeObject(forKey: key.rawValue)
+            }
+        }
+    }
 }

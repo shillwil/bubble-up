@@ -19,9 +19,14 @@ class ShareViewController: UIViewController {
 
         let hostingView = UIHostingController(rootView: ShareExtensionContentView(
             stateHolder: stateHolder,
-            onSave: { [weak self] url, title, tags, localFileName, contentMimeType in
-                self?.saveItem(url: url, title: title, tags: tags, localFileName: localFileName, contentMimeType: contentMimeType)
-                self?.close()
+            onSave: { [weak self] url, title, tags, localFileName, contentMimeType, userNotes in
+                self?.saveItem(url: url, title: title, tags: tags, localFileName: localFileName, contentMimeType: contentMimeType, userNotes: userNotes)
+                // For links, generate summary before closing so it's ready when the app opens
+                if let urlString = url, !urlString.isEmpty {
+                    self?.generateSummaryThenClose(url: urlString, title: title, userNotes: userNotes)
+                } else {
+                    self?.close()
+                }
             },
             onCancel: { [weak self] in
                 self?.close()
@@ -226,10 +231,25 @@ class ShareViewController: UIViewController {
         }
     }
 
+    // MARK: - Background Summary
+
+    private func generateSummaryThenClose(url: String, title: String?, userNotes: String?) {
+        Task {
+            if let result = await ShareExtensionSummarizer.generateSummary(url: url, title: title, userNotes: userNotes) {
+                SharedPendingItemStore.updateLatestWithSummary(
+                    summary: result.summary,
+                    bullets: result.bullets,
+                    estimatedReadTime: result.estimatedReadTime
+                )
+            }
+            await MainActor.run { self.close() }
+        }
+    }
+
     // MARK: - Save & Close
 
-    private func saveItem(url: String?, title: String?, tags: [String], localFileName: String? = nil, contentMimeType: String? = nil) {
-        let item = SharedPendingItem(url: url, title: title, tags: tags, localFileName: localFileName, contentMimeType: contentMimeType)
+    private func saveItem(url: String?, title: String?, tags: [String], localFileName: String? = nil, contentMimeType: String? = nil, userNotes: String? = nil) {
+        let item = SharedPendingItem(url: url, title: title, tags: tags, localFileName: localFileName, contentMimeType: contentMimeType, userNotes: userNotes)
         SharedPendingItemStore.save(item)
     }
 
@@ -262,7 +282,7 @@ class ShareStateHolder {
 
 struct ShareExtensionContentView: View {
     @Bindable var stateHolder: ShareStateHolder
-    var onSave: (String?, String?, [String], String?, String?) -> Void
+    var onSave: (String?, String?, [String], String?, String?, String?) -> Void
     var onCancel: () -> Void
 
     var body: some View {
