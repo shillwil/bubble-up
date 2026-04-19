@@ -46,7 +46,6 @@ struct FeedView: View {
                     .scrollTargetLayout()
                 }
                 .scrollTargetBehavior(.paging)
-                .ignoresSafeArea(edges: .vertical)
             }
 
             // Floating add button
@@ -54,6 +53,7 @@ struct FeedView: View {
         }
         .background(Color.bubbleUpBackground(for: colorScheme))
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $showAddLink) {
             AddLinkView()
         }
