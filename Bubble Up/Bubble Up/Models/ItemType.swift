@@ -4,7 +4,11 @@ import Foundation
 enum ItemType: String, CaseIterable, Sendable {
     case link
     case bookSummary
-    // Future: youtube, pdf, document, epub
+    case youtube
+    case pdf
+    case image
+    case video
+    // Future: document, epub
 }
 
 /// Summary generation length options for book summaries.

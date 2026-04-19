@@ -8,6 +8,8 @@ enum ContentType: Sendable {
     case pdf
     case wordDoc
     case epub
+    case image
+    case video
     case unknown
 
     static func from(mimeType: String?) -> ContentType {
@@ -24,6 +26,10 @@ enum ContentType: Sendable {
             return .wordDoc
         case "application/epub+zip":
             return .epub
+        case _ where mimeType.hasPrefix("image/"):
+            return .image
+        case _ where mimeType.hasPrefix("video/"):
+            return .video
         default:
             return .unknown
         }
@@ -46,6 +52,10 @@ enum ContentType: Sendable {
             return .wordDoc
         case "epub":
             return .epub
+        case "jpg", "jpeg", "png", "gif", "heic", "webp":
+            return .image
+        case "mp4", "mov", "avi", "mkv":
+            return .video
         default:
             return .webArticle
         }
@@ -58,6 +68,8 @@ enum ContentType: Sendable {
         case .pdf: return "application/pdf"
         case .wordDoc: return "application/msword"
         case .epub: return "application/epub+zip"
+        case .image: return "image/jpeg"
+        case .video: return "video/mp4"
         case .unknown: return "application/octet-stream"
         }
     }

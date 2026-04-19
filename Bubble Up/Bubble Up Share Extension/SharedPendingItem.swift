@@ -4,16 +4,20 @@ import Foundation
 /// This is a standalone copy for the extension target — the main app has its own copy
 /// that references Config.appGroupIdentifier.
 struct SharedPendingItem: Codable {
-    let url: String
+    let url: String?
     let title: String?
     let tags: [String]
     let savedAt: Date
+    let localFileName: String?
+    let contentMimeType: String?
 
-    init(url: String, title: String? = nil, tags: [String] = []) {
+    init(url: String? = nil, title: String? = nil, tags: [String] = [], localFileName: String? = nil, contentMimeType: String? = nil) {
         self.url = url
         self.title = title
         self.tags = tags
         self.savedAt = Date()
+        self.localFileName = localFileName
+        self.contentMimeType = contentMimeType
     }
 }
 

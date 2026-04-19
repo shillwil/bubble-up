@@ -86,6 +86,33 @@ struct BookSummaryView: View {
 
     private func header(for item: LibraryItem) -> some View {
         VStack(alignment: .leading, spacing: 12) {
+            // Book cover image
+            if let thumbnailData = item.thumbnailData,
+               let uiImage = UIImage(data: thumbnailData) {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(height: 200)
+                    .clipShape(RoundedRectangle(cornerRadius: BubbleUpTheme.cornerRadiusSm))
+                    .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
+                    .frame(maxWidth: .infinity)
+                    .padding(.bottom, 16)
+            } else if let thumbnailURL = item.thumbnailURL,
+                      let url = URL(string: thumbnailURL) {
+                AsyncImage(url: url) { phase in
+                    if case .success(let image) = phase {
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(height: 200)
+                            .clipShape(RoundedRectangle(cornerRadius: BubbleUpTheme.cornerRadiusSm))
+                            .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
+                            .frame(maxWidth: .infinity)
+                            .padding(.bottom, 16)
+                    }
+                }
+            }
+
             Text(item.title ?? "Book Summary")
                 .font(.display(32, weight: .bold))
                 .foregroundColor(Color.bubbleUpText(for: colorScheme))
@@ -101,6 +128,14 @@ struct BookSummaryView: View {
                 .font(.metaLabel(12))
                 .tracking(2)
                 .foregroundColor(Color.bubbleUpTextMuted(for: colorScheme))
+
+            if !item.tagsArray.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(item.tagsArray, id: \.self) { tag in
+                        TagPill(label: tag)
+                    }
+                }
+            }
         }
     }
 

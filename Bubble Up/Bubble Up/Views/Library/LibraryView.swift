@@ -11,18 +11,27 @@ struct LibraryView: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var searchText = ""
+    @State private var selectedTag: String?
     @State private var selectedItem: LibraryItem?
 
+    private var allTags: [String] {
+        Array(Set(allItems.flatMap { $0.tagsArray.map { $0.lowercased() } })).sorted()
+    }
+
     private var filteredItems: [LibraryItem] {
-        if searchText.isEmpty {
-            return Array(allItems)
+        var items = Array(allItems)
+        if !searchText.isEmpty {
+            let query = searchText.lowercased()
+            items = items.filter { item in
+                (item.title?.lowercased().contains(query) == true) ||
+                (item.summary?.lowercased().contains(query) == true) ||
+                (item.tagsArray.contains { $0.lowercased().contains(query) })
+            }
         }
-        let query = searchText.lowercased()
-        return allItems.filter { item in
-            (item.title?.lowercased().contains(query) == true) ||
-            (item.summary?.lowercased().contains(query) == true) ||
-            (item.tagsArray.contains { $0.lowercased().contains(query) })
+        if let tag = selectedTag {
+            items = items.filter { $0.tagsArray.contains { $0.lowercased() == tag.lowercased() } }
         }
+        return items
     }
 
     var body: some View {
@@ -35,6 +44,11 @@ struct LibraryView: View {
 
                 // Search Bar
                 UnderlineSearchBar(text: $searchText, placeholder: "Search your archive...")
+
+                // Tag Filter
+                if !allTags.isEmpty {
+                    TagFilterBar(tags: allTags, selectedTag: $selectedTag)
+                }
 
                 // Masonry Grid
                 if filteredItems.isEmpty {
@@ -60,6 +74,10 @@ struct LibraryView: View {
         .navigationDestination(item: $selectedItem) { item in
             if item.itemTypeEnum == .bookSummary {
                 BookSummaryView(itemID: item.id!, showSaveButton: false)
+            } else if item.itemTypeEnum == .image {
+                ImageDetailView(item: item)
+            } else if item.itemTypeEnum == .video {
+                VideoDetailView(item: item)
             } else {
                 ArticleDetailView(item: item)
             }

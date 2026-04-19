@@ -8,6 +8,7 @@
         <attribute name="id" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="isRead" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
         <attribute name="itemType" attributeType="String" defaultValueString="link"/>
+        <attribute name="localFilePath" optional="YES" attributeType="String"/>
         <attribute name="rawContent" optional="YES" attributeType="String"/>
         <attribute name="sourceDisplayName" optional="YES" attributeType="String"/>
         <attribute name="summary" optional="YES" attributeType="String"/>

@@ -3,16 +3,20 @@ import Foundation
 /// Lightweight model for sharing pending items between the Share Extension and the main app
 /// via App Group UserDefaults. No Core Data dependency.
 struct SharedPendingItem: Codable {
-    let url: String
+    let url: String?              // Optional now (nil for file-based items)
     let title: String?
     let tags: [String]
     let savedAt: Date
+    let localFileName: String?    // Filename in App Group shared container
+    let contentMimeType: String?  // MIME type for file-based items
 
-    init(url: String, title: String? = nil, tags: [String] = []) {
+    init(url: String? = nil, title: String? = nil, tags: [String] = [], localFileName: String? = nil, contentMimeType: String? = nil) {
         self.url = url
         self.title = title
         self.tags = tags
         self.savedAt = Date()
+        self.localFileName = localFileName
+        self.contentMimeType = contentMimeType
     }
 }
 

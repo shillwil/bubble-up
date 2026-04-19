@@ -41,7 +41,7 @@ struct WebArticleProcessor: ContentProcessor {
     private func extractTitle(from html: String) -> String? {
         // Try og:title first
         if let ogTitle = extractMetaContent(from: html, property: "og:title") {
-            return ogTitle
+            return decodeHTMLEntities(ogTitle)
         }
         // Fallback to <title> tag
         if let titleRange = html.range(of: "<title>"),
@@ -49,14 +49,17 @@ struct WebArticleProcessor: ContentProcessor {
             let start = titleRange.upperBound
             let end = endRange.lowerBound
             if start < end {
-                return String(html[start..<end]).trimmingCharacters(in: .whitespacesAndNewlines)
+                return decodeHTMLEntities(String(html[start..<end]).trimmingCharacters(in: .whitespacesAndNewlines))
             }
         }
         return nil
     }
 
     private func extractAuthor(from html: String) -> String? {
-        extractMetaContent(from: html, name: "author")
+        if let author = extractMetaContent(from: html, name: "author") {
+            return decodeHTMLEntities(author)
+        }
+        return nil
     }
 
     private func extractOGImage(from html: String) -> URL? {
@@ -82,9 +85,23 @@ struct WebArticleProcessor: ContentProcessor {
 
         if let contentRange = prefix.range(of: "content=\""),
            let endQuote = prefix[contentRange.upperBound...].range(of: "\"") {
-            return String(prefix[contentRange.upperBound..<endQuote.lowerBound])
+            return decodeHTMLEntities(String(prefix[contentRange.upperBound..<endQuote.lowerBound]))
         }
         return nil
+    }
+
+    private func decodeHTMLEntities(_ string: String) -> String {
+        string
+            .replacingOccurrences(of: "&#39;", with: "'")
+            .replacingOccurrences(of: "&#039;", with: "'")
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&#x27;", with: "'")
+            .replacingOccurrences(of: "&apos;", with: "'")
+            .replacingOccurrences(of: "&#38;", with: "&")
+            .replacingOccurrences(of: "&nbsp;", with: " ")
     }
 
     private func extractReadableText(from html: String) -> String {

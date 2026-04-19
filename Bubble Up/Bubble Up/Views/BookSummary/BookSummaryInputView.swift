@@ -11,6 +11,7 @@ struct BookSummaryInputView: View {
     @State private var bookTitle = ""
     @State private var author = ""
     @State private var summaryLength: SummaryLength = .full
+    @State private var tagsText = ""
     @State private var isGenerating = false
     @State private var generatedItemID: UUID?
     @State private var showDuplicateMessage = false
@@ -31,6 +32,7 @@ struct BookSummaryInputView: View {
                 VStack(spacing: 20) {
                     underlineField("BOOK TITLE", text: $bookTitle)
                     underlineField("AUTHOR (OPTIONAL)", text: $author)
+                    underlineField("TAGS (OPTIONAL)", text: $tagsText)
                 }
 
                 // Length Picker
@@ -100,10 +102,12 @@ struct BookSummaryInputView: View {
 
     private func generateSummary() {
         isGenerating = true
+        let tags = tagsText.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         let result = repository.saveBookSummaryRequest(
             title: bookTitle,
             author: author.isEmpty ? nil : author,
-            length: summaryLength
+            length: summaryLength,
+            tags: tags
         )
 
         if result.isExisting {

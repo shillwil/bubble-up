@@ -101,6 +101,10 @@ actor RequestScheduler {
                 try await processLinkSummary(snapshot, context: context)
             } else if snapshot.requestType == "book_summary" {
                 try await processBookSummary(snapshot, context: context)
+            } else if snapshot.requestType == "youtube_summary" {
+                try await processYouTubeSummary(snapshot, context: context)
+            } else if snapshot.requestType == "pdf_summary" {
+                try await processPDFSummary(snapshot, context: context)
             }
         } catch {
             print("❌ RequestScheduler error for \(snapshot.requestType) [item: \(snapshot.libraryItemID)]: \(error)")
@@ -157,6 +161,9 @@ actor RequestScheduler {
                     if let readTime = extracted.estimatedReadTime {
                         item.estimatedReadTime = Int16(readTime)
                     }
+                    if let thumbnailURL = extracted.thumbnailURL {
+                        item.thumbnailURL = thumbnailURL.absoluteString
+                    }
                     item.summaryStatusEnum = .generating
                     try? context.save()
                 }
@@ -181,6 +188,19 @@ actor RequestScheduler {
                 estimatedReadTime: result.estimatedReadTime
             )
             self.markRequestCompleted(context: context, requestID: snapshot.id)
+        }
+
+        // 5. Download thumbnail image for offline use
+        let savedThumbnailURL: String? = await context.perform {
+            let fetchRequest = LibraryItem.fetchRequest()
+            fetchRequest.predicate = NSPredicate(format: "id == %@", snapshot.libraryItemID as CVarArg)
+            fetchRequest.fetchLimit = 1
+            return try? context.fetch(fetchRequest).first?.thumbnailURL
+        }
+        if let thumbnailURLString = savedThumbnailURL, let thumbnailURL = URL(string: thumbnailURLString) {
+            Task {
+                await self.downloadThumbnail(itemID: snapshot.libraryItemID, from: thumbnailURL)
+            }
         }
     }
 
@@ -213,6 +233,205 @@ actor RequestScheduler {
                 summary: result.summary,
                 elevatorPitch: result.elevatorPitch,
                 pages: result.pages.map { ($0.title, $0.content) }
+            )
+            self.markRequestCompleted(context: context, requestID: snapshot.id)
+        }
+
+        // Fetch book cover image
+        Task {
+            await self.fetchAndSaveBookCover(
+                itemID: snapshot.libraryItemID,
+                title: itemInfo.title ?? "",
+                author: itemInfo.author
+            )
+        }
+    }
+
+    private func processYouTubeSummary(_ snapshot: PendingRequestSnapshot, context: NSManagedObjectContext) async throws {
+        // 1. Get the URL from the library item
+        let itemInfo: (url: String?, title: String?) = await context.perform {
+            let fetchRequest = LibraryItem.fetchRequest()
+            fetchRequest.predicate = NSPredicate(format: "id == %@", snapshot.libraryItemID as CVarArg)
+            fetchRequest.fetchLimit = 1
+            guard let item = try? context.fetch(fetchRequest).first else { return (nil, nil) }
+            return (item.url, item.title)
+        }
+
+        guard let urlString = itemInfo.url, let url = URL(string: urlString) else {
+            throw SummaryProviderError.contentTooShort
+        }
+
+        // 2. Extract transcript and metadata
+        let processor = YouTubeProcessor()
+        let extracted = try await processor.extractContent(from: url)
+
+        let transcript = extracted.textContent ?? ""
+        let extractedTitle = extracted.title ?? itemInfo.title
+
+        // Cache metadata back to the item
+        await context.perform {
+            let fetchRequest = LibraryItem.fetchRequest()
+            fetchRequest.predicate = NSPredicate(format: "id == %@", snapshot.libraryItemID as CVarArg)
+            fetchRequest.fetchLimit = 1
+            if let item = try? context.fetch(fetchRequest).first {
+                if let title = extractedTitle, item.title == "Loading..." || item.title?.isEmpty == true {
+                    item.title = title
+                }
+                if let author = extracted.authorName {
+                    item.authorName = author
+                }
+                if let thumbnailURL = extracted.thumbnailURL {
+                    item.thumbnailURL = thumbnailURL.absoluteString
+                }
+                if let readTime = extracted.estimatedReadTime {
+                    item.estimatedReadTime = Int16(readTime)
+                }
+                if !transcript.isEmpty {
+                    item.rawContent = transcript
+                }
+                item.summaryStatusEnum = .generating
+                try? context.save()
+            }
+        }
+
+        // 3. Generate summary — prefer sending the YouTube URL directly to Gemini
+        // (Google/Gemini can watch and analyze YouTube videos natively).
+        // Fall back to transcript only if the URL-based approach fails.
+        let provider = getSummaryProvider(for: snapshot.requestType)
+
+        let urlContent = "YouTube video URL: \(urlString)\n\nPlease watch/analyze this YouTube video and provide a summary."
+
+        var result: SummaryResult
+        do {
+            result = try await provider.generateLinkSummary(
+                content: urlContent,
+                title: extractedTitle,
+                url: urlString
+            )
+        } catch {
+            // URL-based analysis failed — fall back to transcript if available
+            guard !transcript.isEmpty else { throw error }
+            result = try await provider.generateLinkSummary(
+                content: transcript,
+                title: extractedTitle,
+                url: urlString
+            )
+        }
+
+        // 4. Write result back
+        await context.perform {
+            self.writeSummaryResult(
+                context: context,
+                itemID: snapshot.libraryItemID,
+                summary: result.summary,
+                bullets: result.bullets,
+                estimatedReadTime: result.estimatedReadTime
+            )
+            self.markRequestCompleted(context: context, requestID: snapshot.id)
+        }
+
+        // 5. Download thumbnail
+        if let thumbnailURL = extracted.thumbnailURL {
+            Task {
+                await self.downloadThumbnail(itemID: snapshot.libraryItemID, from: thumbnailURL)
+            }
+        }
+    }
+
+    private func processPDFSummary(_ snapshot: PendingRequestSnapshot, context: NSManagedObjectContext) async throws {
+        // 1. Get the URL or local file path from the library item
+        let itemInfo: (url: String?, localFilePath: String?, title: String?, rawContent: String?) = await context.perform {
+            let fetchRequest = LibraryItem.fetchRequest()
+            fetchRequest.predicate = NSPredicate(format: "id == %@", snapshot.libraryItemID as CVarArg)
+            fetchRequest.fetchLimit = 1
+            guard let item = try? context.fetch(fetchRequest).first else { return (nil, nil, nil, nil) }
+            return (item.url, item.localFilePath, item.title, item.rawContent)
+        }
+
+        // 2. Determine the source URL (remote URL or local file)
+        let sourceURL: URL
+        if let urlString = itemInfo.url, let url = URL(string: urlString) {
+            sourceURL = url
+        } else if let localFilePath = itemInfo.localFilePath,
+                  let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: Config.appGroupIdentifier) {
+            sourceURL = containerURL.appendingPathComponent("SharedFiles").appendingPathComponent(localFilePath)
+        } else {
+            throw SummaryProviderError.contentTooShort
+        }
+
+        // 3. Extract content if not already cached
+        var content = itemInfo.rawContent ?? ""
+        var extractedTitle = itemInfo.title
+
+        if content.isEmpty {
+            let processor = PDFProcessor()
+            let extracted = try await processor.extractContent(from: sourceURL)
+            content = extracted.textContent ?? ""
+
+            if extractedTitle == "Loading..." || extractedTitle?.isEmpty == true {
+                extractedTitle = extracted.title
+            }
+
+            // Generate thumbnail from PDF first page
+            let pdfData: Data
+            if sourceURL.isFileURL {
+                pdfData = try Data(contentsOf: sourceURL)
+            } else {
+                let (downloaded, _) = try await URLSession.shared.data(from: sourceURL)
+                pdfData = downloaded
+            }
+            let thumbnailData = processor.generateThumbnail(from: pdfData)
+
+            // Cache extracted content and metadata
+            await context.perform {
+                let fetchRequest = LibraryItem.fetchRequest()
+                fetchRequest.predicate = NSPredicate(format: "id == %@", snapshot.libraryItemID as CVarArg)
+                fetchRequest.fetchLimit = 1
+                if let item = try? context.fetch(fetchRequest).first {
+                    item.rawContent = content
+                    if let title = extractedTitle, item.title == "Loading..." || item.title?.isEmpty == true {
+                        item.title = title
+                    }
+                    if let author = extracted.authorName {
+                        item.authorName = author
+                    }
+                    if let readTime = extracted.estimatedReadTime {
+                        item.estimatedReadTime = Int16(readTime)
+                    }
+                    if let thumbData = thumbnailData {
+                        item.thumbnailData = thumbData
+                    }
+                    item.summaryStatusEnum = .generating
+                    try? context.save()
+                }
+            }
+        }
+
+        // For scanned/image-only PDFs, provide minimal context instead of failing
+        guard !content.isEmpty || extractedTitle != nil else {
+            throw SummaryProviderError.contentTooShort
+        }
+        if content.isEmpty {
+            content = "PDF document titled: \(extractedTitle ?? sourceURL.lastPathComponent). The PDF contains scanned images without extractable text. Please provide a brief description based on the title."
+        }
+
+        // 4. Generate summary
+        let urlString = itemInfo.url ?? sourceURL.absoluteString
+        let provider = getSummaryProvider(for: snapshot.requestType)
+        let result = try await provider.generateLinkSummary(
+            content: content,
+            title: extractedTitle,
+            url: urlString
+        )
+
+        // 5. Write result back
+        await context.perform {
+            self.writeSummaryResult(
+                context: context,
+                itemID: snapshot.libraryItemID,
+                summary: result.summary,
+                bullets: result.bullets,
+                estimatedReadTime: result.estimatedReadTime
             )
             self.markRequestCompleted(context: context, requestID: snapshot.id)
         }
@@ -329,6 +548,48 @@ actor RequestScheduler {
 
         try? context.save()
     }
+    // MARK: - Book Cover Fetch
+
+    private func fetchAndSaveBookCover(itemID: UUID, title: String, author: String?) async {
+        guard let coverURL = await BookCoverService().fetchCoverURL(title: title, author: author) else { return }
+
+        let context = persistenceController.newBackgroundContext()
+
+        // Save the cover URL first for immediate AsyncImage display
+        await context.perform {
+            let fetchRequest = LibraryItem.fetchRequest()
+            fetchRequest.predicate = NSPredicate(format: "id == %@", itemID as CVarArg)
+            fetchRequest.fetchLimit = 1
+            if let item = try? context.fetch(fetchRequest).first {
+                item.thumbnailURL = coverURL.absoluteString
+                try? context.save()
+            }
+        }
+
+        // Download binary data for offline use
+        await self.downloadThumbnail(itemID: itemID, from: coverURL)
+    }
+
+    // MARK: - Thumbnail Download
+
+    private func downloadThumbnail(itemID: UUID, from url: URL) async {
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            let context = persistenceController.newBackgroundContext()
+            await context.perform {
+                let fetchRequest = LibraryItem.fetchRequest()
+                fetchRequest.predicate = NSPredicate(format: "id == %@", itemID as CVarArg)
+                fetchRequest.fetchLimit = 1
+                if let item = try? context.fetch(fetchRequest).first {
+                    item.thumbnailData = data
+                    try? context.save()
+                }
+            }
+        } catch {
+            print("Thumbnail download failed: \(error)")
+        }
+    }
+
     // MARK: - Title Fallback
 
     /// Derives a human-readable title from a URL when content extraction fails.

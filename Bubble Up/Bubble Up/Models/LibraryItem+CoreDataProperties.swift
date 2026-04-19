@@ -24,6 +24,7 @@ extension LibraryItem {
     @NSManaged public var updatedAt: Date?
     @NSManaged public var rawContent: String?
     @NSManaged public var contentMimeType: String?
+    @NSManaged public var localFilePath: String?
     @NSManaged public var summaryStatus: String?
     @NSManaged public var pages: NSSet?
     @NSManaged public var comments: NSSet?

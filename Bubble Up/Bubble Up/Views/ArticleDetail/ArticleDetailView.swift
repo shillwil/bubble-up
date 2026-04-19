@@ -70,6 +70,14 @@ struct ArticleDetailView: View {
                 source: item.sourceDisplayName,
                 readTime: item.estimatedReadTime > 0 ? Int(item.estimatedReadTime) : nil
             )
+
+            if !item.tagsArray.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(item.tagsArray, id: \.self) { tag in
+                        TagPill(label: tag)
+                    }
+                }
+            }
         }
         .padding(.horizontal, BubbleUpTheme.paddingHorizontal)
         .padding(.bottom, 24)
@@ -90,6 +98,23 @@ struct ArticleDetailView: View {
                 .clipShape(RoundedRectangle(cornerRadius: BubbleUpTheme.cornerRadiusSm))
                 .padding(.horizontal, BubbleUpTheme.paddingHorizontal)
                 .padding(.bottom, 24)
+                .onTapGesture { showWebView = true }
+        } else if let thumbnailURL = item.thumbnailURL,
+                  let url = URL(string: thumbnailURL) {
+            AsyncImage(url: url) { phase in
+                if case .success(let image) = phase {
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(height: 220)
+                        .frame(maxWidth: .infinity)
+                        .clipped()
+                        .clipShape(RoundedRectangle(cornerRadius: BubbleUpTheme.cornerRadiusSm))
+                        .padding(.horizontal, BubbleUpTheme.paddingHorizontal)
+                        .padding(.bottom, 24)
+                        .onTapGesture { showWebView = true }
+                }
+            }
         }
     }
 
@@ -122,7 +147,7 @@ struct ArticleDetailView: View {
                 Button {
                     showWebView = true
                 } label: {
-                    Text("VIEW ORIGINAL ARTICLE")
+                    Text(originalButtonLabel)
                         .font(.buttonText(14))
                         .tracking(1.5)
                         .frame(maxWidth: .infinity)
@@ -169,6 +194,16 @@ struct ArticleDetailView: View {
                     }
                 }
             }
+        }
+    }
+
+    // MARK: - Dynamic Labels
+
+    private var originalButtonLabel: String {
+        switch item.itemTypeEnum {
+        case .youtube: return "WATCH ON YOUTUBE"
+        case .pdf: return "VIEW ORIGINAL PDF"
+        default: return "VIEW ORIGINAL ARTICLE"
         }
     }
 

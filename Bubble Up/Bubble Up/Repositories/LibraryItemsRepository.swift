@@ -27,10 +27,16 @@ final class LibraryItemsRepository {
             // If the existing item failed, auto-retry it
             if existing.summaryStatusEnum == .failed && !hasActivePendingRequest(for: existingID) {
                 existing.summaryStatusEnum = .pending
+                let retryType: String
+                switch existing.itemTypeEnum {
+                case .youtube: retryType = "youtube_summary"
+                case .pdf: retryType = "pdf_summary"
+                default: retryType = "link_summary"
+                }
                 let _ = PendingRequest(
                     context: viewContext,
                     libraryItemID: existingID,
-                    requestType: "link_summary",
+                    requestType: retryType,
                     priority: .userInitiated
                 )
                 saveViewContext()
@@ -49,13 +55,29 @@ final class LibraryItemsRepository {
             tags: tags
         )
 
+        // Detect content type from URL and set correct item type
+        if let parsedURL = URL(string: url) {
+            let contentType = ContentType.from(url: parsedURL)
+            if contentType == .youtube {
+                item.itemTypeEnum = .youtube
+            } else if contentType == .pdf {
+                item.itemTypeEnum = .pdf
+            }
+        }
+
         let itemID = item.id!
 
         // Create pending request for AI summary prefetch
+        let requestType: String
+        switch item.itemTypeEnum {
+        case .youtube: requestType = "youtube_summary"
+        case .pdf: requestType = "pdf_summary"
+        default: requestType = "link_summary"
+        }
         let _ = PendingRequest(
             context: viewContext,
             libraryItemID: itemID,
-            requestType: "link_summary",
+            requestType: requestType,
             priority: .background
         )
 
@@ -72,7 +94,7 @@ final class LibraryItemsRepository {
     /// Creates a book summary request.
     /// Returns `.existing` if a book summary with the same title already exists.
     @discardableResult
-    func saveBookSummaryRequest(title: String, author: String?, length: SummaryLength) -> SaveResult {
+    func saveBookSummaryRequest(title: String, author: String?, length: SummaryLength, tags: [String] = []) -> SaveResult {
         // Check for existing book summary with the same title
         if let existing = findExistingBookSummary(title: title, author: author) {
             let existingID = existing.id!
@@ -99,6 +121,7 @@ final class LibraryItemsRepository {
             itemType: .bookSummary
         )
         item.authorName = author
+        item.tagsArray = tags
         item.summaryStatusEnum = .pending
 
         let itemID = item.id!
@@ -220,6 +243,13 @@ final class LibraryItemsRepository {
     // MARK: - Delete
 
     func deleteItem(_ item: LibraryItem) {
+        // Clean up local file if present
+        if let localFilePath = item.localFilePath {
+            if let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: Config.appGroupIdentifier) {
+                let fileURL = containerURL.appendingPathComponent("SharedFiles").appendingPathComponent(localFilePath)
+                try? FileManager.default.removeItem(at: fileURL)
+            }
+        }
         viewContext.delete(item)
         saveViewContext()
     }
@@ -244,7 +274,16 @@ final class LibraryItemsRepository {
         let _ = PendingRequest(
             context: viewContext,
             libraryItemID: itemID,
-            requestType: item.itemTypeEnum == .bookSummary ? "book_summary" : "link_summary",
+            requestType: {
+                switch item.itemTypeEnum {
+                case .bookSummary: return "book_summary"
+                case .youtube: return "youtube_summary"
+                case .pdf: return "pdf_summary"
+                case .image: return "image_process"
+                case .video: return "video_process"
+                default: return "link_summary"
+                }
+            }(),
             priority: .userInitiated
         )
         saveViewContext()
@@ -260,7 +299,12 @@ final class LibraryItemsRepository {
     private func findExistingLink(url: String) -> LibraryItem? {
         let normalized = Self.normalizeURL(url)
         let fetchRequest = LibraryItem.fetchRequest()
-        fetchRequest.predicate = NSPredicate(format: "itemType == %@", ItemType.link.rawValue)
+        fetchRequest.predicate = NSPredicate(
+            format: "itemType == %@ OR itemType == %@ OR itemType == %@",
+            ItemType.link.rawValue,
+            ItemType.youtube.rawValue,
+            ItemType.pdf.rawValue
+        )
 
         guard let items = try? viewContext.fetch(fetchRequest) else { return nil }
         return items.first { Self.normalizeURL($0.url ?? "") == normalized }
@@ -331,10 +375,82 @@ final class LibraryItemsRepository {
         guard !pendingItems.isEmpty else { return }
 
         for pending in pendingItems {
-            saveLink(url: pending.url, title: pending.title, tags: pending.tags)
+            if let url = pending.url, !url.isEmpty {
+                // URL-based item (existing flow)
+                saveLink(url: url, title: pending.title, tags: pending.tags)
+            } else if let localFileName = pending.localFileName {
+                // File-based item
+                importFileItem(localFileName: localFileName, title: pending.title, tags: pending.tags, mimeType: pending.contentMimeType)
+            }
         }
 
         SharedPendingItemStore.clear()
+    }
+
+    // MARK: - File Import
+
+    private func importFileItem(localFileName: String, title: String?, tags: [String], mimeType: String?) {
+        let contentType = ContentType.from(mimeType: mimeType)
+        let itemType: ItemType
+
+        switch contentType {
+        case .pdf: itemType = .pdf
+        case .image: itemType = .image
+        case .video: itemType = .video
+        default: itemType = .link
+        }
+
+        let item = LibraryItem(
+            context: viewContext,
+            title: title ?? localFileName,
+            itemType: itemType
+        )
+        item.tagsArray = tags
+        item.localFilePath = localFileName
+        item.contentMimeType = mimeType
+
+        let itemID = item.id!
+
+        // Images don't need AI summarization — load the image data as thumbnail
+        if itemType == .image {
+            if let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: Config.appGroupIdentifier) {
+                let fileURL = containerURL.appendingPathComponent("SharedFiles").appendingPathComponent(localFileName)
+                if let imageData = try? Data(contentsOf: fileURL) {
+                    item.thumbnailData = imageData
+                }
+            }
+            item.summaryStatusEnum = .completed
+            item.summary = "Image"
+        } else if itemType == .video {
+            // Videos: generate thumbnail, no AI summary in v1
+            if let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: Config.appGroupIdentifier) {
+                let fileURL = containerURL.appendingPathComponent("SharedFiles").appendingPathComponent(localFileName)
+                Task {
+                    let processor = VideoProcessor()
+                    if let thumbnailData = await processor.generateThumbnail(from: fileURL) {
+                        await MainActor.run {
+                            item.thumbnailData = thumbnailData
+                            self.saveViewContext()
+                        }
+                    }
+                }
+            }
+            item.summaryStatusEnum = .completed
+            item.summary = "Video"
+        } else if itemType == .pdf {
+            // PDFs: queue for AI summarization
+            let _ = PendingRequest(
+                context: viewContext,
+                libraryItemID: itemID,
+                requestType: "pdf_summary",
+                priority: .background
+            )
+            if let scheduler = requestScheduler {
+                Task { await scheduler.notifyNewRequest() }
+            }
+        }
+
+        saveViewContext()
     }
 
     // MARK: - Private

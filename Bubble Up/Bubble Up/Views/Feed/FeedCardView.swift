@@ -4,6 +4,7 @@ import CoreData
 /// Single full-screen feed card matching the editorial mock.
 struct FeedCardView: View {
     @ObservedObject var item: LibraryItem
+    var bottomInset: CGFloat = 0
     @Environment(LibraryItemsRepository.self) private var repository
     @Environment(\.colorScheme) private var colorScheme
     @State private var showArticleDetail = false
@@ -39,13 +40,25 @@ struct FeedCardView: View {
                     )
                     .padding(.bottom, 24)
 
+                    // Tags
+                    if !item.tagsArray.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(item.tagsArray, id: \.self) { tag in
+                                    TagPill(label: tag)
+                                }
+                            }
+                        }
+                        .padding(.bottom, 8)
+                    }
+
                     // Summary bullets or skeleton
                     summaryContent
 
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, BubbleUpTheme.paddingHorizontal)
-                .padding(.bottom, 80)
+                .padding(.bottom, 80 + max(bottomInset, 90))
 
                 // Sticky bottom button
                 readFullButton
@@ -55,6 +68,10 @@ struct FeedCardView: View {
         .navigationDestination(isPresented: $showArticleDetail) {
             if item.itemTypeEnum == .bookSummary {
                 BookSummaryView(itemID: item.id!, showSaveButton: false)
+            } else if item.itemTypeEnum == .image {
+                ImageDetailView(item: item)
+            } else if item.itemTypeEnum == .video {
+                VideoDetailView(item: item)
             } else {
                 ArticleDetailView(item: item)
             }
@@ -116,6 +133,9 @@ struct FeedCardView: View {
             .frame(height: height * 0.7)
         }
         .frame(height: height)
+        .onTapGesture {
+            showArticleDetail = true
+        }
     }
 
     // MARK: - Summary Content
@@ -157,12 +177,23 @@ struct FeedCardView: View {
 
     // MARK: - Read Full Button
 
+    private var readFullButtonLabel: String {
+        switch item.itemTypeEnum {
+        case .youtube: return "WATCH VIDEO"
+        case .pdf: return "VIEW PDF"
+        case .bookSummary: return "READ SUMMARY"
+        case .image: return "VIEW IMAGE"
+        case .video: return "WATCH VIDEO"
+        default: return "READ FULL"
+        }
+    }
+
     private var readFullButton: some View {
         VStack(spacing: 0) {
             Button {
                 showArticleDetail = true
             } label: {
-                Text("READ FULL")
+                Text(readFullButtonLabel)
                     .font(.buttonText(15))
                     .tracking(1.5)
                     .frame(maxWidth: .infinity)
@@ -172,7 +203,8 @@ struct FeedCardView: View {
                     .clipShape(RoundedRectangle(cornerRadius: BubbleUpTheme.cornerRadiusSm))
             }
             .padding(.horizontal, BubbleUpTheme.paddingHorizontal)
-            .padding(.vertical, BubbleUpTheme.paddingVertical)
+            .padding(.top, 24)
+            .padding(.bottom, max(bottomInset, 90) + 24)
         }
         .background(Color.bubbleUpBackground(for: colorScheme))
     }

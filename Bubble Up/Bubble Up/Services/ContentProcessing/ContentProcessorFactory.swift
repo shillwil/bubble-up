@@ -7,6 +7,8 @@ enum ContentProcessorFactory {
         WebArticleProcessor(),
         YouTubeProcessor(),
         PDFProcessor(),
+        ImageProcessor(),
+        VideoProcessor(),
         DefaultProcessor()
     ]
 

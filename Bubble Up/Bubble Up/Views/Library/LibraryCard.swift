@@ -20,7 +20,21 @@ struct LibraryCard: View {
                     .clipped()
                     .clipShape(RoundedRectangle(cornerRadius: BubbleUpTheme.cornerRadiusSm))
                     .padding(.bottom, 12)
-            } else if item.thumbnailData == nil && item.summary != nil {
+            } else if let thumbnailURL = item.thumbnailURL,
+                      let url = URL(string: thumbnailURL) {
+                AsyncImage(url: url) { phase in
+                    if case .success(let image) = phase {
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: imageHeight)
+                            .clipped()
+                            .clipShape(RoundedRectangle(cornerRadius: BubbleUpTheme.cornerRadiusSm))
+                            .padding(.bottom, 12)
+                    }
+                }
+            } else if item.thumbnailData == nil && item.thumbnailURL == nil && item.summary != nil {
                 // Text-only card: show excerpt
                 Text(item.summary ?? "")
                     .font(.bodyText(14))
@@ -45,6 +59,16 @@ struct LibraryCard: View {
                     .tracking(0.5)
                     .textCase(.uppercase)
                     .foregroundColor(Color.bubbleUpTextMuted(for: colorScheme))
+            }
+
+            // Tags
+            if !item.tagsArray.isEmpty {
+                HStack(spacing: 4) {
+                    ForEach(item.tagsArray.prefix(3), id: \.self) { tag in
+                        TagPill(label: tag)
+                    }
+                }
+                .padding(.top, 6)
             }
         }
         .padding(8)
