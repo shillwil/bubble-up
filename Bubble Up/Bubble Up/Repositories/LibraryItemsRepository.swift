@@ -21,7 +21,7 @@ final class LibraryItemsRepository {
     /// Saves a new link and queues summary prefetch.
     /// Returns `.existing` if a link with the same URL is already in the library.
     @discardableResult
-    func saveLink(url: String, title: String? = nil, tags: [String] = []) -> SaveResult {
+    func saveLink(url: String, title: String? = nil, tags: [String] = [], preGeneratedSummary: String? = nil, preGeneratedBullets: [String]? = nil, preGeneratedReadTime: Int? = nil) -> SaveResult {
         // Check for existing link with the same URL
         if let existing = findExistingLink(url: url) {
             let existingID = existing.id!
@@ -55,7 +55,6 @@ final class LibraryItemsRepository {
             url: url,
             tags: tags
         )
-
         // Detect content type from URL and set correct item type
         if let parsedURL = URL(string: url) {
             let contentType = ContentType.from(url: parsedURL)
@@ -68,7 +67,19 @@ final class LibraryItemsRepository {
 
         let itemID = item.id!
 
-        // Create pending request for AI summary prefetch
+        // If the share extension pre-generated a summary, use it directly
+        if let summary = preGeneratedSummary, let bullets = preGeneratedBullets {
+            item.summary = summary
+            item.summaryBulletsArray = bullets
+            if let readTime = preGeneratedReadTime {
+                item.estimatedReadTime = Int16(readTime)
+            }
+            item.summaryStatusEnum = .completed
+            saveViewContext()
+            return .created(itemID)
+        }
+
+        // Otherwise, create pending request for AI summary
         let requestType: String
         switch item.itemTypeEnum {
         case .youtube: requestType = "youtube_summary"
@@ -390,8 +401,15 @@ final class LibraryItemsRepository {
 
         for pending in pendingItems {
             if let url = pending.url, !url.isEmpty {
-                // URL-based item (existing flow)
-                saveLink(url: url, title: pending.title, tags: pending.tags)
+                // URL-based item — use pre-generated summary if available
+                saveLink(
+                    url: url,
+                    title: pending.title,
+                    tags: pending.tags,
+                    preGeneratedSummary: pending.summary,
+                    preGeneratedBullets: pending.summaryBullets,
+                    preGeneratedReadTime: pending.estimatedReadTime
+                )
             } else if let localFileName = pending.localFileName {
                 // File-based item
                 importFileItem(localFileName: localFileName, title: pending.title, tags: pending.tags, mimeType: pending.contentMimeType)

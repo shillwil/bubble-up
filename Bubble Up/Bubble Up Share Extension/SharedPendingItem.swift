@@ -11,6 +11,11 @@ struct SharedPendingItem: Codable {
     let localFileName: String?
     let contentMimeType: String?
 
+    // Pre-generated summary (filled by share extension if BYOK key is available)
+    var summary: String?
+    var summaryBullets: [String]?
+    var estimatedReadTime: Int?
+
     init(url: String? = nil, title: String? = nil, tags: [String] = [], localFileName: String? = nil, contentMimeType: String? = nil) {
         self.url = url
         self.title = title
@@ -37,6 +42,16 @@ enum SharedPendingItemStore {
             return []
         }
         return (try? JSONDecoder().decode([SharedPendingItem].self, from: data)) ?? []
+    }
+
+    /// Updates the most recently saved item with a pre-generated summary.
+    static func updateLatestWithSummary(summary: String, bullets: [String], estimatedReadTime: Int?) {
+        var items = load()
+        guard !items.isEmpty else { return }
+        items[items.count - 1].summary = summary
+        items[items.count - 1].summaryBullets = bullets
+        items[items.count - 1].estimatedReadTime = estimatedReadTime
+        write(items)
     }
 
     static func clear() {

@@ -35,6 +35,9 @@ final class AppDependencies {
 
     /// Starts background services. Restores auth session FIRST, then starts scheduler and sync.
     func startServices() {
+        // Sync BYOK API keys to App Group so share extension can access them
+        keychainService.syncKeysToAppGroup()
+
         Task {
             // 1. Restore auth session so the Supabase client has a valid JWT
             await authService.restoreSession()

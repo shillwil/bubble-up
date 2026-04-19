@@ -125,6 +125,7 @@ struct APIKeyManagementView: View {
     private func saveKey(_ value: String, for key: KeychainService.Key, provider: String) {
         do {
             try keychainService.set(value, for: key)
+            keychainService.syncKeysToAppGroup()
             statusMessage = "\(provider) key saved successfully"
         } catch {
             statusMessage = "Failed to save key: \(error.localizedDescription)"
@@ -134,6 +135,7 @@ struct APIKeyManagementView: View {
     private func deleteKey(_ key: KeychainService.Key, provider: String) {
         do {
             try keychainService.delete(key)
+            keychainService.syncKeysToAppGroup()
             statusMessage = "\(provider) key removed"
         } catch {
             statusMessage = "Failed to remove key: \(error.localizedDescription)"
