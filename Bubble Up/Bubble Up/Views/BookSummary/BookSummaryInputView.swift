@@ -13,6 +13,7 @@ struct BookSummaryInputView: View {
     @State private var summaryLength: SummaryLength = .full
     @State private var isGenerating = false
     @State private var generatedItemID: UUID?
+    @State private var showDuplicateMessage = false
 
     var body: some View {
         ScrollView {
@@ -71,7 +72,11 @@ struct BookSummaryInputView: View {
         }
         .background(Color.bubbleUpBackground(for: colorScheme))
         .navigationDestination(item: $generatedItemID) { itemID in
-            BookSummaryView(itemID: itemID, onDone: onDone)
+            BookSummaryView(
+                itemID: itemID,
+                showSaveButton: !showDuplicateMessage,
+                onDone: onDone
+            )
         }
     }
 
@@ -95,12 +100,17 @@ struct BookSummaryInputView: View {
 
     private func generateSummary() {
         isGenerating = true
-        let itemID = repository.saveBookSummaryRequest(
+        let result = repository.saveBookSummaryRequest(
             title: bookTitle,
             author: author.isEmpty ? nil : author,
             length: summaryLength
         )
-        generatedItemID = itemID
+
+        if result.isExisting {
+            showDuplicateMessage = true
+        }
+
+        generatedItemID = result.id
         isGenerating = false
     }
 }

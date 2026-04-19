@@ -24,7 +24,7 @@ enum Config {
     // MARK: - Request Scheduler
 
     static let maxConcurrentRequests = 3
-    static let maxRetryAttempts: Int16 = 5
+    static let maxRetryAttempts: Int16 = 8
     static let maxBackoffSeconds: TimeInterval = 300 // 5 minutes
 
     // MARK: - Rate Limits (F&F)

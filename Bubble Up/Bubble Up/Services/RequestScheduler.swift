@@ -139,6 +139,11 @@ actor RequestScheduler {
                 extractedTitle = extracted.title
             }
 
+            // If still no title after extraction, derive from URL
+            if extractedTitle == nil || extractedTitle == "Loading..." || extractedTitle?.isEmpty == true {
+                extractedTitle = Self.titleFromURL(urlString)
+            }
+
             // Cache the extracted content and metadata back to the item
             await context.perform {
                 let fetchRequest = LibraryItem.fetchRequest()
@@ -244,6 +249,13 @@ actor RequestScheduler {
         fetchRequest.fetchLimit = 1
         guard let item = try? context.fetch(fetchRequest).first else { return }
 
+        // Safety net: if title is still "Loading...", derive from URL
+        if item.title == "Loading..." || item.title?.isEmpty == true {
+            if let urlString = item.url {
+                item.title = Self.titleFromURL(urlString)
+            }
+        }
+
         item.summary = summary
         item.summaryBulletsArray = bullets
         item.summaryStatusEnum = .completed
@@ -316,6 +328,26 @@ actor RequestScheduler {
         }
 
         try? context.save()
+    }
+    // MARK: - Title Fallback
+
+    /// Derives a human-readable title from a URL when content extraction fails.
+    static func titleFromURL(_ urlString: String) -> String {
+        guard let url = URL(string: urlString) else { return urlString }
+        let host = url.host?.replacingOccurrences(of: "www.", with: "") ?? ""
+        let lastComponent = url.lastPathComponent
+
+        if !lastComponent.isEmpty && lastComponent != "/" {
+            // Clean up path component: "great-article-2024" -> "Great Article 2024"
+            let cleaned = lastComponent
+                .replacingOccurrences(of: "-", with: " ")
+                .replacingOccurrences(of: "_", with: " ")
+                .split(separator: " ")
+                .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+                .joined(separator: " ")
+            return "\(host) \u{2014} \(cleaned)"
+        }
+        return host.isEmpty ? urlString : host
     }
 }
 

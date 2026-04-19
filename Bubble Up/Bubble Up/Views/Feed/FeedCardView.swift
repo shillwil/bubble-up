@@ -53,7 +53,11 @@ struct FeedCardView: View {
         }
         .background(Color.bubbleUpBackground(for: colorScheme))
         .navigationDestination(isPresented: $showArticleDetail) {
-            ArticleDetailView(item: item)
+            if item.itemTypeEnum == .bookSummary {
+                BookSummaryView(itemID: item.id!, showSaveButton: false)
+            } else {
+                ArticleDetailView(item: item)
+            }
         }
         .confirmationDialog("Delete this item?", isPresented: $showDeleteConfirmation, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
@@ -124,15 +128,29 @@ struct FeedCardView: View {
         case .pending, .generating:
             FeedSkeletonCard()
         case .failed:
-            Button {
-                retrySummary()
-            } label: {
+            VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
-                    Image(systemName: "arrow.clockwise")
-                    Text("Tap to retry summary")
+                    Image(systemName: "exclamationmark.triangle")
+                    Text("Summary generation failed")
                 }
                 .font(.bodyText(15))
-                .foregroundColor(BubbleUpTheme.primary)
+                .foregroundColor(Color.bubbleUpTextMuted(for: colorScheme))
+
+                Text("Try opening the original link to verify it\u{2019}s accessible, then tap below to retry.")
+                    .font(.bodyText(13))
+                    .foregroundColor(Color.bubbleUpTextMuted(for: colorScheme))
+
+                Button {
+                    retrySummary()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.clockwise")
+                        Text("Retry Summary")
+                    }
+                    .font(.bodyText(15))
+                    .foregroundColor(BubbleUpTheme.primary)
+                }
+                .padding(.top, 4)
             }
         }
     }
@@ -162,26 +180,6 @@ struct FeedCardView: View {
     // MARK: - Retry
 
     private func retrySummary() {
-        guard let itemID = item.id else { return }
-
-        // Reset status to pending
-        item.summaryStatusEnum = .pending
-        try? item.managedObjectContext?.save()
-
-        // Create a new pending request
-        if let context = item.managedObjectContext {
-            let _ = PendingRequest(
-                context: context,
-                libraryItemID: itemID,
-                requestType: item.itemTypeEnum == .bookSummary ? "book_summary" : "link_summary",
-                priority: .userInitiated
-            )
-            try? context.save()
-        }
-
-        // Notify scheduler
-        if let scheduler = repository.requestScheduler {
-            Task { await scheduler.notifyNewRequest() }
-        }
+        repository.retryRequest(for: item)
     }
 }

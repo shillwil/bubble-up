@@ -17,7 +17,7 @@ public class PendingRequest: NSManagedObject {
         self.status = RequestStatus.pending.rawValue
         self.priority = priority.rawValue
         self.retryCount = 0
-        self.maxRetries = 5
+        self.maxRetries = Config.maxRetryAttempts
         self.createdAt = Date()
     }
 

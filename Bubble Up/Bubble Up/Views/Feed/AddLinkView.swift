@@ -9,6 +9,7 @@ struct AddLinkView: View {
     @State private var urlText = ""
     @State private var tagsText = ""
     @State private var isSaving = false
+    @State private var showDuplicateMessage = false
 
     var body: some View {
         NavigationStack {
@@ -112,6 +113,23 @@ struct AddLinkView: View {
                         .foregroundColor(BubbleUpTheme.primary)
                 }
             }
+            .overlay {
+                if showDuplicateMessage {
+                    VStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 32))
+                            .foregroundColor(BubbleUpTheme.primary)
+                        Text("Already in your library")
+                            .font(.bodyText(15))
+                            .foregroundColor(Color.bubbleUpText(for: colorScheme))
+                    }
+                    .padding(24)
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .transition(.opacity)
+                }
+            }
+            .animation(.easeInOut, value: showDuplicateMessage)
         }
     }
 
@@ -128,8 +146,16 @@ struct AddLinkView: View {
         }
 
         isSaving = true
-        repository.saveLink(url: finalURL, tags: tags)
-        dismiss()
+        let result = repository.saveLink(url: finalURL, tags: tags)
+
+        if result.isExisting {
+            showDuplicateMessage = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                dismiss()
+            }
+        } else {
+            dismiss()
+        }
     }
 }
 

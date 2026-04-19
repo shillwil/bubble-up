@@ -33,3 +33,21 @@ enum RequestStatus: String, Sendable {
     case inProgress
     case failed
 }
+
+/// Result of attempting to save a link or book summary.
+enum SaveResult {
+    case created(UUID)
+    case existing(UUID)
+
+    var id: UUID {
+        switch self {
+        case .created(let id), .existing(let id):
+            return id
+        }
+    }
+
+    var isExisting: Bool {
+        if case .existing = self { return true }
+        return false
+    }
+}

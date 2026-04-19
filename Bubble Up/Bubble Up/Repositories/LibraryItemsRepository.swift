@@ -18,9 +18,29 @@ final class LibraryItemsRepository {
     // MARK: - Create
 
     /// Saves a new link and queues summary prefetch.
-    /// Returns the created item's ID for tracking.
+    /// Returns `.existing` if a link with the same URL is already in the library.
     @discardableResult
-    func saveLink(url: String, title: String? = nil, tags: [String] = []) -> UUID {
+    func saveLink(url: String, title: String? = nil, tags: [String] = []) -> SaveResult {
+        // Check for existing link with the same URL
+        if let existing = findExistingLink(url: url) {
+            let existingID = existing.id!
+            // If the existing item failed, auto-retry it
+            if existing.summaryStatusEnum == .failed && !hasActivePendingRequest(for: existingID) {
+                existing.summaryStatusEnum = .pending
+                let _ = PendingRequest(
+                    context: viewContext,
+                    libraryItemID: existingID,
+                    requestType: "link_summary",
+                    priority: .userInitiated
+                )
+                saveViewContext()
+                if let scheduler = requestScheduler {
+                    Task { await scheduler.notifyNewRequest() }
+                }
+            }
+            return .existing(existingID)
+        }
+
         let item = LibraryItem(
             context: viewContext,
             title: title ?? "Loading...",
@@ -46,12 +66,33 @@ final class LibraryItemsRepository {
             Task { await scheduler.notifyNewRequest() }
         }
 
-        return itemID
+        return .created(itemID)
     }
 
     /// Creates a book summary request.
+    /// Returns `.existing` if a book summary with the same title already exists.
     @discardableResult
-    func saveBookSummaryRequest(title: String, author: String?, length: SummaryLength) -> UUID {
+    func saveBookSummaryRequest(title: String, author: String?, length: SummaryLength) -> SaveResult {
+        // Check for existing book summary with the same title
+        if let existing = findExistingBookSummary(title: title, author: author) {
+            let existingID = existing.id!
+            // If the existing item failed, auto-retry it
+            if existing.summaryStatusEnum == .failed && !hasActivePendingRequest(for: existingID) {
+                existing.summaryStatusEnum = .pending
+                let _ = PendingRequest(
+                    context: viewContext,
+                    libraryItemID: existingID,
+                    requestType: "book_summary",
+                    priority: .userInitiated
+                )
+                saveViewContext()
+                if let scheduler = requestScheduler {
+                    Task { await scheduler.notifyNewRequest() }
+                }
+            }
+            return .existing(existingID)
+        }
+
         let item = LibraryItem(
             context: viewContext,
             title: title,
@@ -75,7 +116,7 @@ final class LibraryItemsRepository {
             Task { await scheduler.notifyNewRequest() }
         }
 
-        return itemID
+        return .created(itemID)
     }
 
     // MARK: - Update
@@ -190,6 +231,95 @@ final class LibraryItemsRepository {
         fetchRequest.predicate = NSPredicate(format: "id == %@", id as CVarArg)
         fetchRequest.fetchLimit = 1
         return try? viewContext.fetch(fetchRequest).first
+    }
+
+    // MARK: - Retry
+
+    /// Centralized retry for failed items. Guards against duplicate in-flight requests.
+    func retryRequest(for item: LibraryItem) {
+        guard let itemID = item.id else { return }
+        guard !hasActivePendingRequest(for: itemID) else { return }
+
+        item.summaryStatusEnum = .pending
+        let _ = PendingRequest(
+            context: viewContext,
+            libraryItemID: itemID,
+            requestType: item.itemTypeEnum == .bookSummary ? "book_summary" : "link_summary",
+            priority: .userInitiated
+        )
+        saveViewContext()
+
+        if let scheduler = requestScheduler {
+            Task { await scheduler.notifyNewRequest() }
+        }
+    }
+
+    // MARK: - Duplicate Detection
+
+    /// Finds an existing link with the same normalized URL.
+    private func findExistingLink(url: String) -> LibraryItem? {
+        let normalized = Self.normalizeURL(url)
+        let fetchRequest = LibraryItem.fetchRequest()
+        fetchRequest.predicate = NSPredicate(format: "itemType == %@", ItemType.link.rawValue)
+
+        guard let items = try? viewContext.fetch(fetchRequest) else { return nil }
+        return items.first { Self.normalizeURL($0.url ?? "") == normalized }
+    }
+
+    /// Finds an existing book summary with the same title (case-insensitive).
+    private func findExistingBookSummary(title: String, author: String?) -> LibraryItem? {
+        let fetchRequest = LibraryItem.fetchRequest()
+        fetchRequest.predicate = NSPredicate(format: "itemType == %@", ItemType.bookSummary.rawValue)
+
+        guard let items = try? viewContext.fetch(fetchRequest) else { return nil }
+
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return items.first { item in
+            let existingTitle = (item.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard existingTitle == trimmedTitle else { return false }
+            // If author provided, check it matches (but allow match if existing has no author)
+            if let author = author, !author.isEmpty, let existingAuthor = item.authorName, !existingAuthor.isEmpty {
+                return existingAuthor.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                    == author.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            }
+            return true
+        }
+    }
+
+    /// Checks if a non-failed PendingRequest already exists for this item.
+    private func hasActivePendingRequest(for libraryItemID: UUID) -> Bool {
+        let fetchRequest = PendingRequest.fetchRequest()
+        fetchRequest.predicate = NSPredicate(
+            format: "libraryItemID == %@ AND status != %@",
+            libraryItemID as CVarArg,
+            RequestStatus.failed.rawValue
+        )
+        fetchRequest.fetchLimit = 1
+        return ((try? viewContext.fetch(fetchRequest))?.isEmpty == false)
+    }
+
+    /// Normalizes a URL for comparison: lowercase host, strip www., remove trailing slash, prefer https.
+    static func normalizeURL(_ urlString: String) -> String {
+        guard var components = URLComponents(string: urlString) else {
+            return urlString.lowercased()
+        }
+        // Normalize scheme to https
+        if components.scheme?.lowercased() == "http" {
+            components.scheme = "https"
+        }
+        // Lowercase host and strip www.
+        components.host = components.host?.lowercased().replacingOccurrences(of: "www.", with: "")
+        // Remove trailing slash from path
+        if components.path.hasSuffix("/") && components.path.count > 1 {
+            components.path = String(components.path.dropLast())
+        }
+        // Remove common tracking query parameters
+        if let queryItems = components.queryItems {
+            let trackingParams: Set<String> = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "ref", "fbclid", "gclid"]
+            let filtered = queryItems.filter { !trackingParams.contains($0.name.lowercased()) }
+            components.queryItems = filtered.isEmpty ? nil : filtered
+        }
+        return components.string ?? urlString.lowercased()
     }
 
     // MARK: - Share Extension Pickup

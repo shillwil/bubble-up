@@ -5,15 +5,18 @@ import CoreData
 /// Observes Core Data changes so the UI updates when the scheduler writes the summary.
 struct BookSummaryView: View {
     let itemID: UUID
+    var showSaveButton: Bool
     var onDone: (() -> Void)?
 
     @FetchRequest private var items: FetchedResults<LibraryItem>
+    @Environment(LibraryItemsRepository.self) private var repository
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
     @State private var showSavedConfirmation = false
 
-    init(itemID: UUID, onDone: (() -> Void)? = nil) {
+    init(itemID: UUID, showSaveButton: Bool = true, onDone: (() -> Void)? = nil) {
         self.itemID = itemID
+        self.showSaveButton = showSaveButton
         self.onDone = onDone
         self._items = FetchRequest(
             sortDescriptors: [],
@@ -31,8 +34,8 @@ struct BookSummaryView: View {
                         header(for: item)
                         summaryContent(for: item)
 
-                        // Save / Done button (shown when summary is complete)
-                        if item.summaryStatusEnum == .completed {
+                        // Save / Done button (shown during generation flow, not when viewing from library)
+                        if showSaveButton && item.summaryStatusEnum == .completed {
                             Button {
                                 showSavedConfirmation = true
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
@@ -171,6 +174,23 @@ struct BookSummaryView: View {
                 Text("Summary generation failed")
                     .font(.bodyText(15))
                     .foregroundColor(Color.bubbleUpTextMuted(for: colorScheme))
+
+                Text("Check your internet connection and try again.")
+                    .font(.bodyText(13))
+                    .foregroundColor(Color.bubbleUpTextMuted(for: colorScheme))
+                    .multilineTextAlignment(.center)
+
+                Button {
+                    repository.retryRequest(for: item)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.clockwise")
+                        Text("Retry Summary")
+                    }
+                    .font(.bodyText(15))
+                    .foregroundColor(BubbleUpTheme.primary)
+                }
+                .padding(.top, 4)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 60)

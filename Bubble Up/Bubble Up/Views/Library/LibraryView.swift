@@ -58,7 +58,11 @@ struct LibraryView: View {
         .paperTexture()
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(item: $selectedItem) { item in
-            ArticleDetailView(item: item)
+            if item.itemTypeEnum == .bookSummary {
+                BookSummaryView(itemID: item.id!, showSaveButton: false)
+            } else {
+                ArticleDetailView(item: item)
+            }
         }
     }
 
