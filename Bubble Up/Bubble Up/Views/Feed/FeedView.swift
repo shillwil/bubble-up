@@ -5,6 +5,7 @@ import CoreData
 struct FeedView: View {
     @FetchRequest(
         sortDescriptors: [NSSortDescriptor(keyPath: \LibraryItem.createdAt, ascending: false)],
+        predicate: NSPredicate(format: "syncStatus != %@", SyncStatus.pendingDelete.rawValue),
         animation: .default
     )
     private var items: FetchedResults<LibraryItem>
