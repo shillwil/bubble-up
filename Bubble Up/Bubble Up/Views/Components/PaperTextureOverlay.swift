@@ -2,11 +2,14 @@ import SwiftUI
 
 /// Subtle noise grain overlay for the editorial paper texture effect.
 struct PaperTextureOverlay: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+
     func body(content: Content) -> some View {
         content
             .overlay {
                 Canvas { context, size in
-                    // Draw a subtle noise pattern
+                    let dotColor: Color = colorScheme == .dark ? .white : .black
+
                     for _ in 0..<500 {
                         let x = CGFloat.random(in: 0..<size.width)
                         let y = CGFloat.random(in: 0..<size.height)
@@ -16,12 +19,12 @@ struct PaperTextureOverlay: ViewModifier {
                         context.opacity = opacity
                         context.fill(
                             Path(ellipseIn: CGRect(x: x, y: y, width: dotSize, height: dotSize)),
-                            with: .color(.black)
+                            with: .color(dotColor)
                         )
                     }
                 }
                 .allowsHitTesting(false)
-                .blendMode(.multiply)
+                .blendMode(colorScheme == .dark ? .screen : .multiply)
             }
     }
 }

@@ -2,16 +2,21 @@ import SwiftUI
 
 /// Shimmer animation modifier for loading skeleton states.
 struct ShimmerModifier: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
     @State private var phase: CGFloat = -1
 
     func body(content: Content) -> some View {
         content
             .overlay {
                 GeometryReader { geometry in
+                    let shimmerColor = colorScheme == .dark
+                        ? Color.white.opacity(0.15)
+                        : Color.white.opacity(0.4)
+
                     LinearGradient(
                         colors: [
                             .clear,
-                            Color.white.opacity(0.4),
+                            shimmerColor,
                             .clear
                         ],
                         startPoint: .leading,

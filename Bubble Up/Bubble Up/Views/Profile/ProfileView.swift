@@ -6,7 +6,7 @@ struct ProfileView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     @AppStorage("typographySize") private var typographySize: Double = 16
-    @AppStorage("darkMode") private var darkMode = false
+    @AppStorage("appearanceMode") private var appearanceMode = "system"
     @AppStorage("dailyDigest") private var dailyDigest = true
 
     @State private var showAPIKeyManagement = false
@@ -120,8 +120,23 @@ struct ProfileView: View {
                 .foregroundColor(Color.bubbleUpTextMuted(for: colorScheme))
             }
 
-            // Dark Mode
-            settingToggle("DARK MODE", isOn: $darkMode)
+            // Appearance
+            VStack(alignment: .leading, spacing: 8) {
+                Text("APPEARANCE")
+                    .font(.system(size: 12, weight: .semibold))
+                    .tracking(1.5)
+
+                Picker("", selection: $appearanceMode) {
+                    Text("Light").tag("light")
+                    Text("System").tag("system")
+                    Text("Dark").tag("dark")
+                }
+                .pickerStyle(.segmented)
+            }
+            .padding(.vertical, 4)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(Color.bubbleUpBorder(for: colorScheme).opacity(0.5)).frame(height: 0.5)
+            }
 
             // Daily Digest
             VStack(alignment: .leading, spacing: 4) {

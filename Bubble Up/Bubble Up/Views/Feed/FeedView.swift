@@ -14,6 +14,9 @@ struct FeedView: View {
     @State private var showBookSummary = false
     @State private var showAddMenu = false
 
+    /// Number of times to repeat the feed after "All Caught Up"
+    private let loopRepetitions = 3
+
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
             if items.isEmpty {
@@ -21,14 +24,29 @@ struct FeedView: View {
             } else {
                 ScrollView(.vertical, showsIndicators: false) {
                     LazyVStack(spacing: 0) {
+                        // Original items
                         ForEach(items) { item in
                             FeedCardView(item: item)
                                 .containerRelativeFrame(.vertical)
+                        }
+
+                        // "All Caught Up" divider card
+                        AllCaughtUpCard()
+                            .containerRelativeFrame(.vertical)
+
+                        // Loop: repeat the archive
+                        ForEach(0..<loopRepetitions, id: \.self) { repetition in
+                            ForEach(items) { item in
+                                FeedCardView(item: item)
+                                    .containerRelativeFrame(.vertical)
+                                    .id("loop-\(repetition)-\(item.id?.uuidString ?? "")")
+                            }
                         }
                     }
                     .scrollTargetLayout()
                 }
                 .scrollTargetBehavior(.paging)
+                .ignoresSafeArea(edges: .vertical)
             }
 
             // Floating add button
@@ -50,27 +68,60 @@ struct FeedView: View {
                     }
             }
         }
-        .confirmationDialog("Add Content", isPresented: $showAddMenu) {
-            Button("Add Link") { showAddLink = true }
-            Button("Book Summary") { showBookSummary = true }
-            Button("Cancel", role: .cancel) {}
-        }
     }
 
+    // MARK: - Add Button + Menu
+
     private var addButton: some View {
-        Button {
-            showAddMenu = true
+        Menu {
+            Button {
+                showAddLink = true
+            } label: {
+                Label("Add Link", systemImage: "link")
+            }
+
+            Button {
+                showBookSummary = true
+            } label: {
+                Label("Book Summary", systemImage: "book.closed")
+            }
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 22, weight: .semibold))
                 .foregroundColor(.white)
                 .frame(width: 56, height: 56)
-                .background(BubbleUpTheme.primary)
+                .background(Color.bubbleUpText(for: colorScheme))
                 .clipShape(Circle())
                 .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
         }
         .padding(.trailing, BubbleUpTheme.paddingHorizontal)
-        .padding(.bottom, 24)
+        .padding(.bottom, 100)
+    }
+}
+
+// MARK: - All Caught Up Card
+
+private struct AllCaughtUpCard: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "checkmark.circle")
+                .font(.system(size: 56, weight: .light))
+                .foregroundColor(BubbleUpTheme.primary)
+
+            Text("All Caught Up")
+                .font(.display(32, weight: .bold))
+                .foregroundColor(Color.bubbleUpText(for: colorScheme))
+
+            Text("You\u{2019}ve seen everything. Keep swiping to revisit your archive.")
+                .font(.bodyText(15))
+                .foregroundColor(Color.bubbleUpTextMuted(for: colorScheme))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.bubbleUpBackground(for: colorScheme))
     }
 }
 

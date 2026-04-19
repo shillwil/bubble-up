@@ -5,6 +5,15 @@ import CoreData
 struct Bubble_UpApp: App {
     @State private var dependencies = AppDependencies()
     @Environment(\.scenePhase) private var scenePhase
+    @AppStorage("appearanceMode") private var appearanceMode = "system"
+
+    private var resolvedColorScheme: ColorScheme? {
+        switch appearanceMode {
+        case "light": return .light
+        case "dark": return .dark
+        default: return nil // system
+        }
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -14,6 +23,7 @@ struct Bubble_UpApp: App {
                 .environment(dependencies.repository)
                 .environment(dependencies.keychainService)
                 .environment(\.managedObjectContext, dependencies.persistenceController.container.viewContext)
+                .preferredColorScheme(resolvedColorScheme)
                 .task {
                     dependencies.startServices()
                 }

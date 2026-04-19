@@ -49,7 +49,7 @@ struct MainTabView: View {
             }
             .tag(Tab.settings)
         }
-        .tint(BubbleUpTheme.textDark)
+        .tint(BubbleUpTheme.primary)
     }
 }
 
