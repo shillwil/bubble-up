@@ -119,12 +119,12 @@ actor RequestScheduler {
 
     private func processLinkSummary(_ snapshot: PendingRequestSnapshot, context: NSManagedObjectContext) async throws {
         // 1. Get the URL from the library item
-        let itemInfo: (url: String?, title: String?, rawContent: String?, userNotes: String?) = await context.perform {
+        let itemInfo: (url: String?, title: String?, rawContent: String?) = await context.perform {
             let fetchRequest = LibraryItem.fetchRequest()
             fetchRequest.predicate = NSPredicate(format: "id == %@", snapshot.libraryItemID as CVarArg)
             fetchRequest.fetchLimit = 1
-            guard let item = try? context.fetch(fetchRequest).first else { return (nil, nil, nil, nil) }
-            return (item.url, item.title, item.rawContent, item.userNotes)
+            guard let item = try? context.fetch(fetchRequest).first else { return (nil, nil, nil) }
+            return (item.url, item.title, item.rawContent)
         }
 
         guard let urlString = itemInfo.url, let url = URL(string: urlString) else {
@@ -175,8 +175,7 @@ actor RequestScheduler {
         let result = try await provider.generateLinkSummary(
             content: content,
             title: extractedTitle,
-            url: urlString,
-            userNotes: itemInfo.userNotes
+            url: urlString
         )
 
         // 4. Write result back
@@ -250,12 +249,12 @@ actor RequestScheduler {
 
     private func processYouTubeSummary(_ snapshot: PendingRequestSnapshot, context: NSManagedObjectContext) async throws {
         // 1. Get the URL from the library item
-        let itemInfo: (url: String?, title: String?, userNotes: String?) = await context.perform {
+        let itemInfo: (url: String?, title: String?) = await context.perform {
             let fetchRequest = LibraryItem.fetchRequest()
             fetchRequest.predicate = NSPredicate(format: "id == %@", snapshot.libraryItemID as CVarArg)
             fetchRequest.fetchLimit = 1
-            guard let item = try? context.fetch(fetchRequest).first else { return (nil, nil, nil) }
-            return (item.url, item.title, item.userNotes)
+            guard let item = try? context.fetch(fetchRequest).first else { return (nil, nil) }
+            return (item.url, item.title)
         }
 
         guard let urlString = itemInfo.url, let url = URL(string: urlString) else {
@@ -307,8 +306,7 @@ actor RequestScheduler {
             result = try await provider.generateLinkSummary(
                 content: urlContent,
                 title: extractedTitle,
-                url: urlString,
-                userNotes: itemInfo.userNotes
+                url: urlString
             )
         } catch {
             // URL-based analysis failed — fall back to transcript if available
@@ -316,8 +314,7 @@ actor RequestScheduler {
             result = try await provider.generateLinkSummary(
                 content: transcript,
                 title: extractedTitle,
-                url: urlString,
-                userNotes: itemInfo.userNotes
+                url: urlString
             )
         }
 
@@ -343,12 +340,12 @@ actor RequestScheduler {
 
     private func processPDFSummary(_ snapshot: PendingRequestSnapshot, context: NSManagedObjectContext) async throws {
         // 1. Get the URL or local file path from the library item
-        let itemInfo: (url: String?, localFilePath: String?, title: String?, rawContent: String?, userNotes: String?) = await context.perform {
+        let itemInfo: (url: String?, localFilePath: String?, title: String?, rawContent: String?) = await context.perform {
             let fetchRequest = LibraryItem.fetchRequest()
             fetchRequest.predicate = NSPredicate(format: "id == %@", snapshot.libraryItemID as CVarArg)
             fetchRequest.fetchLimit = 1
-            guard let item = try? context.fetch(fetchRequest).first else { return (nil, nil, nil, nil, nil) }
-            return (item.url, item.localFilePath, item.title, item.rawContent, item.userNotes)
+            guard let item = try? context.fetch(fetchRequest).first else { return (nil, nil, nil, nil) }
+            return (item.url, item.localFilePath, item.title, item.rawContent)
         }
 
         // 2. Determine the source URL (remote URL or local file)
@@ -424,8 +421,7 @@ actor RequestScheduler {
         let result = try await provider.generateLinkSummary(
             content: content,
             title: extractedTitle,
-            url: urlString,
-            userNotes: itemInfo.userNotes
+            url: urlString
         )
 
         // 5. Write result back

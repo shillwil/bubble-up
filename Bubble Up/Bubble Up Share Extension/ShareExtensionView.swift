@@ -6,11 +6,10 @@ struct ShareExtensionView: View {
     @Binding var contentType: String
     @Binding var localFileName: String?
     var previewState: PreviewState
-    var onSave: (String?, String?, [String], String?, String?, String?) -> Void
+    var onSave: (String?, String?, [String], String?, String?) -> Void
     var onCancel: () -> Void
 
     @State private var tagsText: String = ""
-    @State private var notesText: String = ""
     @State private var isSaved = false
 
     var body: some View {
@@ -94,19 +93,6 @@ struct ShareExtensionView: View {
                 }
                 .padding(.bottom, 16)
 
-            // Notes input
-            TextField("Add a note (optional)", text: $notesText, axis: .vertical)
-                .font(.system(size: 15))
-                .foregroundColor(Color(hex: 0x1A1A1A))
-                .lineLimit(1...3)
-                .padding(.bottom, 8)
-                .overlay(alignment: .bottom) {
-                    Rectangle()
-                        .fill(Color(hex: 0xE5E4E0))
-                        .frame(height: 1)
-                }
-                .padding(.bottom, 16)
-
             // Save button
             Button {
                 let tags = tagsText
@@ -122,7 +108,7 @@ struct ShareExtensionView: View {
                     }
                 }()
                 let urlToSave = contentType == "link" ? sharedURL : nil
-                onSave(urlToSave, sharedTitle.isEmpty ? nil : sharedTitle, tags, localFileName, mimeType, notesText.isEmpty ? nil : notesText)
+                onSave(urlToSave, sharedTitle.isEmpty ? nil : sharedTitle, tags, localFileName, mimeType)
                 isSaved = true
             } label: {
                 Text("SAVE")

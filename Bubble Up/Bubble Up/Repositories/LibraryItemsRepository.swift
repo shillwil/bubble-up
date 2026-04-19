@@ -20,7 +20,7 @@ final class LibraryItemsRepository {
     /// Saves a new link and queues summary prefetch.
     /// Returns `.existing` if a link with the same URL is already in the library.
     @discardableResult
-    func saveLink(url: String, title: String? = nil, tags: [String] = [], userNotes: String? = nil, preGeneratedSummary: String? = nil, preGeneratedBullets: [String]? = nil, preGeneratedReadTime: Int? = nil) -> SaveResult {
+    func saveLink(url: String, title: String? = nil, tags: [String] = [], preGeneratedSummary: String? = nil, preGeneratedBullets: [String]? = nil, preGeneratedReadTime: Int? = nil) -> SaveResult {
         // Check for existing link with the same URL
         if let existing = findExistingLink(url: url) {
             let existingID = existing.id!
@@ -54,8 +54,6 @@ final class LibraryItemsRepository {
             url: url,
             tags: tags
         )
-        item.userNotes = userNotes
-
         // Detect content type from URL and set correct item type
         if let parsedURL = URL(string: url) {
             let contentType = ContentType.from(url: parsedURL)
@@ -394,14 +392,13 @@ final class LibraryItemsRepository {
                     url: url,
                     title: pending.title,
                     tags: pending.tags,
-                    userNotes: pending.userNotes,
                     preGeneratedSummary: pending.summary,
                     preGeneratedBullets: pending.summaryBullets,
                     preGeneratedReadTime: pending.estimatedReadTime
                 )
             } else if let localFileName = pending.localFileName {
                 // File-based item
-                importFileItem(localFileName: localFileName, title: pending.title, tags: pending.tags, mimeType: pending.contentMimeType, userNotes: pending.userNotes)
+                importFileItem(localFileName: localFileName, title: pending.title, tags: pending.tags, mimeType: pending.contentMimeType)
             }
         }
 
@@ -410,7 +407,7 @@ final class LibraryItemsRepository {
 
     // MARK: - File Import
 
-    private func importFileItem(localFileName: String, title: String?, tags: [String], mimeType: String?, userNotes: String? = nil) {
+    private func importFileItem(localFileName: String, title: String?, tags: [String], mimeType: String?) {
         let contentType = ContentType.from(mimeType: mimeType)
         let itemType: ItemType
 
@@ -427,7 +424,6 @@ final class LibraryItemsRepository {
             itemType: itemType
         )
         item.tagsArray = tags
-        item.userNotes = userNotes
         item.localFilePath = localFileName
         item.contentMimeType = mimeType
 

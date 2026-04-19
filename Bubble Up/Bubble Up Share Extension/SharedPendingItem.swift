@@ -10,21 +10,19 @@ struct SharedPendingItem: Codable {
     let savedAt: Date
     let localFileName: String?
     let contentMimeType: String?
-    let userNotes: String?
 
     // Pre-generated summary (filled by share extension if BYOK key is available)
     var summary: String?
     var summaryBullets: [String]?
     var estimatedReadTime: Int?
 
-    init(url: String? = nil, title: String? = nil, tags: [String] = [], localFileName: String? = nil, contentMimeType: String? = nil, userNotes: String? = nil) {
+    init(url: String? = nil, title: String? = nil, tags: [String] = [], localFileName: String? = nil, contentMimeType: String? = nil) {
         self.url = url
         self.title = title
         self.tags = tags
         self.savedAt = Date()
         self.localFileName = localFileName
         self.contentMimeType = contentMimeType
-        self.userNotes = userNotes
     }
 }
 

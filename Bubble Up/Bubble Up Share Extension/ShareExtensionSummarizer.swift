@@ -17,18 +17,18 @@ enum ShareExtensionSummarizer {
 
     /// Attempts to generate a summary for the given URL. Returns nil if no API key
     /// is available or if content extraction/summarization fails.
-    static func generateSummary(url: String, title: String?, userNotes: String?) async -> SummaryResult? {
+    static func generateSummary(url: String, title: String?) async -> SummaryResult? {
         guard let defaults = UserDefaults(suiteName: appGroupSuite) else { return nil }
 
         // Try providers in order: Gemini → Claude → OpenAI
         if let key = defaults.string(forKey: "com.shillwil.bubble-up.gemini-api-key") {
-            return await summarizeWithGemini(apiKey: key, url: url, title: title, userNotes: userNotes)
+            return await summarizeWithGemini(apiKey: key, url: url, title: title)
         }
         if let key = defaults.string(forKey: "com.shillwil.bubble-up.claude-api-key") {
-            return await summarizeWithClaude(apiKey: key, url: url, title: title, userNotes: userNotes)
+            return await summarizeWithClaude(apiKey: key, url: url, title: title)
         }
         if let key = defaults.string(forKey: "com.shillwil.bubble-up.openai-api-key") {
-            return await summarizeWithOpenAI(apiKey: key, url: url, title: title, userNotes: userNotes)
+            return await summarizeWithOpenAI(apiKey: key, url: url, title: title)
         }
 
         return nil // No BYOK key available
@@ -80,8 +80,8 @@ enum ShareExtensionSummarizer {
 
     // MARK: - Prompt
 
-    private static func buildPrompt(content: String, title: String?, url: String, userNotes: String?) -> String {
-        var prompt = """
+    private static func buildPrompt(content: String, title: String?, url: String) -> String {
+        """
         Summarize the following article. Return your response as a JSON object with this exact structure:
         {
             "summary": "A 1-2 sentence summary stating the article's core argument or finding",
@@ -95,18 +95,6 @@ enum ShareExtensionSummarizer {
         - estimatedReadTime is in minutes, estimated based on article length (~250 words per minute)
         - The reader saved this article to read later. The summary should help them decide when to prioritize reading the full piece.
         - Return ONLY the JSON object, no other text
-        """
-
-        if let notes = userNotes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            prompt += """
-
-            The reader noted why they saved this: "\(notes)"
-            Tailor your summary and bullet points toward their stated interest while still accurately representing the article.
-            """
-        }
-
-        prompt += """
-
 
         Title: \(title ?? "Unknown")
         URL: \(url)
@@ -114,16 +102,14 @@ enum ShareExtensionSummarizer {
         Article content:
         \(String(content.prefix(8000)))
         """
-
-        return prompt
     }
 
     // MARK: - Gemini
 
-    private static func summarizeWithGemini(apiKey: String, url: String, title: String?, userNotes: String?) async -> SummaryResult? {
+    private static func summarizeWithGemini(apiKey: String, url: String, title: String?) async -> SummaryResult? {
         guard let content = await extractContent(from: url), !content.isEmpty else { return nil }
 
-        let prompt = buildPrompt(content: content, title: title, url: url, userNotes: userNotes)
+        let prompt = buildPrompt(content: content, title: title, url: url)
         let endpoint = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=\(apiKey)")!
 
         var request = URLRequest(url: endpoint)
@@ -154,10 +140,10 @@ enum ShareExtensionSummarizer {
 
     // MARK: - Claude
 
-    private static func summarizeWithClaude(apiKey: String, url: String, title: String?, userNotes: String?) async -> SummaryResult? {
+    private static func summarizeWithClaude(apiKey: String, url: String, title: String?) async -> SummaryResult? {
         guard let content = await extractContent(from: url), !content.isEmpty else { return nil }
 
-        let prompt = buildPrompt(content: content, title: title, url: url, userNotes: userNotes)
+        let prompt = buildPrompt(content: content, title: title, url: url)
         let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
 
         var request = URLRequest(url: endpoint)
@@ -191,10 +177,10 @@ enum ShareExtensionSummarizer {
 
     // MARK: - OpenAI
 
-    private static func summarizeWithOpenAI(apiKey: String, url: String, title: String?, userNotes: String?) async -> SummaryResult? {
+    private static func summarizeWithOpenAI(apiKey: String, url: String, title: String?) async -> SummaryResult? {
         guard let content = await extractContent(from: url), !content.isEmpty else { return nil }
 
-        let prompt = buildPrompt(content: content, title: title, url: url, userNotes: userNotes)
+        let prompt = buildPrompt(content: content, title: title, url: url)
         let endpoint = URL(string: "https://api.openai.com/v1/chat/completions")!
 
         var request = URLRequest(url: endpoint)

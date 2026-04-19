@@ -12,9 +12,9 @@ struct GeminiSummaryProvider: SummaryProvider {
         self.session = session
     }
 
-    func generateLinkSummary(content: String, title: String?, url: String, userNotes: String?) async throws -> SummaryResult {
+    func generateLinkSummary(content: String, title: String?, url: String) async throws -> SummaryResult {
         let model = Config.defaultLinkSummaryModel
-        let prompt = buildLinkSummaryPrompt(content: content, title: title, url: url, userNotes: userNotes)
+        let prompt = buildLinkSummaryPrompt(content: content, title: title, url: url)
 
         let responseText = try await callGeminiAPI(model: model, prompt: prompt)
         return try parseSummaryResult(from: responseText)
@@ -79,8 +79,8 @@ struct GeminiSummaryProvider: SummaryProvider {
 
     // MARK: - Prompt Building
 
-    private func buildLinkSummaryPrompt(content: String, title: String?, url: String, userNotes: String?) -> String {
-        var prompt = """
+    private func buildLinkSummaryPrompt(content: String, title: String?, url: String) -> String {
+        """
         Summarize the following article. Return your response as a JSON object with this exact structure:
         {
             "summary": "A 1-2 sentence summary stating the article's core argument or finding",
@@ -94,18 +94,6 @@ struct GeminiSummaryProvider: SummaryProvider {
         - estimatedReadTime is in minutes, estimated based on article length (~250 words per minute)
         - The reader saved this article to read later. The summary should help them decide when to prioritize reading the full piece.
         - Return ONLY the JSON object, no other text
-        """
-
-        if let notes = userNotes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            prompt += """
-
-            The reader noted why they saved this: "\(notes)"
-            Tailor your summary and bullet points toward their stated interest while still accurately representing the article.
-            """
-        }
-
-        prompt += """
-
 
         Title: \(title ?? "Unknown")
         URL: \(url)
@@ -113,8 +101,6 @@ struct GeminiSummaryProvider: SummaryProvider {
         Article content:
         \(String(content.prefix(8000)))
         """
-
-        return prompt
     }
 
     private func buildBookSummaryPrompt(title: String, author: String?, length: SummaryLength) -> String {

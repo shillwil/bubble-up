@@ -8,8 +8,7 @@ protocol SummaryProvider: Sendable {
     func generateLinkSummary(
         content: String,
         title: String?,
-        url: String,
-        userNotes: String?
+        url: String
     ) async throws -> SummaryResult
 
     func generateBookSummary(
@@ -17,12 +16,6 @@ protocol SummaryProvider: Sendable {
         author: String?,
         length: SummaryLength
     ) async throws -> BookSummaryResult
-}
-
-extension SummaryProvider {
-    func generateLinkSummary(content: String, title: String?, url: String) async throws -> SummaryResult {
-        try await generateLinkSummary(content: content, title: title, url: url, userNotes: nil)
-    }
 }
 
 // MARK: - Response DTOs
