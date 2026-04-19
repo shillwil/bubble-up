@@ -332,13 +332,9 @@ struct PDFDetailView: View {
         for i in 0..<pageCount {
             guard let page = document.page(at: i) else { continue }
 
-            if let nsAttrString = page.attributedString {
-                let styled = applyAppTypography(nsAttrString)
+            if let plainText = page.string, !plainText.isEmpty {
+                let styled = stylePageText(plainText)
                 pages.append(styled)
-            } else if let plainText = page.string, !plainText.isEmpty {
-                var attrString = AttributedString(plainText)
-                attrString.font = .bodyText(17)
-                pages.append(attrString)
             }
         }
 
@@ -351,106 +347,72 @@ struct PDFDetailView: View {
         }
     }
 
-    /// Converts NSAttributedString from PDFKit, preserving bold/italic while normalizing fonts,
-    /// and reformatting line-wrapped text into proper paragraphs.
-    private func applyAppTypography(_ nsAttrString: NSAttributedString) -> AttributedString {
-        let mutable = NSMutableAttributedString(attributedString: nsAttrString)
+    // MARK: - Text Styling
 
-        // 1. Reformat paragraphs: join line-wrapped text, preserve real paragraph breaks
-        reformatParagraphs(in: mutable)
+    /// Styles plain text from PDFPage.string with app typography and paragraph spacing.
+    private func stylePageText(_ text: String) -> AttributedString {
+        let bodyFont = UIFont.systemFont(ofSize: 17)
+        let paraStyle: NSParagraphStyle = {
+            let s = NSMutableParagraphStyle()
+            s.paragraphSpacing = 14
+            s.lineSpacing = 6
+            return s
+        }()
 
-        // 2. Normalize fonts: preserve bold/italic traits, use app font
-        let fullRange = NSRange(location: 0, length: mutable.length)
-        mutable.enumerateAttribute(.font, in: fullRange) { value, range, _ in
-            guard let uiFont = value as? UIFont else { return }
+        let mutable = NSMutableAttributedString(
+            string: text,
+            attributes: [.font: bodyFont, .paragraphStyle: paraStyle]
+        )
 
-            let traits = uiFont.fontDescriptor.symbolicTraits
-            let isBold = traits.contains(.traitBold)
-            let isItalic = traits.contains(.traitItalic)
-
-            let size: CGFloat = 17
-            var newFont: UIFont
-
-            if isBold && isItalic {
-                var descriptor = UIFontDescriptor.preferredFontDescriptor(withTextStyle: .body)
-                descriptor = descriptor.withSymbolicTraits([.traitBold, .traitItalic]) ?? descriptor
-                newFont = UIFont(descriptor: descriptor, size: size)
-            } else if isBold {
-                newFont = UIFont.systemFont(ofSize: size, weight: .bold)
-            } else if isItalic {
-                var descriptor = UIFontDescriptor.preferredFontDescriptor(withTextStyle: .body)
-                descriptor = descriptor.withSymbolicTraits(.traitItalic) ?? descriptor
-                newFont = UIFont(descriptor: descriptor, size: size)
-            } else {
-                newFont = UIFont.systemFont(ofSize: size)
-            }
-
-            mutable.addAttribute(.font, value: newFont, range: range)
-        }
-
-        // 3. Add paragraph spacing via NSParagraphStyle
-        let paraStyle = NSMutableParagraphStyle()
-        paraStyle.paragraphSpacing = 14
-        mutable.addAttribute(.paragraphStyle, value: paraStyle, range: NSRange(location: 0, length: mutable.length))
-
-        // 4. Remove PDF-specific colors so SwiftUI theming applies
-        mutable.removeAttribute(.foregroundColor, range: NSRange(location: 0, length: mutable.length))
+        // Join line-wrapped newlines into flowing paragraphs
+        joinLineWraps(in: mutable)
 
         do {
-            var attrString = try AttributedString(mutable, including: \.uiKit)
-            attrString.foregroundColor = nil // let SwiftUI handle color
-            return attrString
+            var result = try AttributedString(mutable, including: \.uiKit)
+            result.foregroundColor = nil
+            return result
         } catch {
-            var fallback = AttributedString(nsAttrString.string)
+            var fallback = AttributedString(text)
             fallback.font = .bodyText(17)
             return fallback
         }
     }
 
-    /// Joins line-wrapped newlines into spaces and preserves real paragraph breaks.
-    /// PDFs insert `\n` at the end of each visual line — this detects which are
-    /// true paragraph boundaries vs. soft wraps from the PDF layout.
-    private func reformatParagraphs(in mutable: NSMutableAttributedString) {
+    /// Joins single-\n line wraps into spaces; preserves \n\n paragraph breaks.
+    private func joinLineWraps(in mutable: NSMutableAttributedString) {
         let characters = Array(mutable.string)
         guard !characters.isEmpty else { return }
 
-        let sentenceEnders: Set<Character> = [".", "!", "?", ":", "\"", "\u{201D}"] // include closing quotes
+        let sentenceEnders: Set<Character> = [".", "!", "?", ":", "\"", "\u{201D}"]
         var replacements: [(location: Int, length: Int, replacement: String)] = []
 
         var i = 0
         while i < characters.count {
-            guard characters[i] == "\n" else {
-                i += 1
-                continue
-            }
+            guard characters[i] == "\n" else { i += 1; continue }
 
-            // Double newline — already a paragraph break, skip
+            // Double newline — real paragraph break, skip
             if i + 1 < characters.count && characters[i + 1] == "\n" {
                 i += 2
                 continue
             }
 
-            // Single newline — determine if paragraph break or line wrap
+            // Single newline — paragraph break or line wrap?
             let charBefore: Character? = i > 0 ? characters[i - 1] : nil
             let endsSentence = charBefore.map { sentenceEnders.contains($0) } ?? false
 
-            // Find next non-space character
             var j = i + 1
             while j < characters.count && characters[j] == " " { j += 1 }
             let nextIsUpper = j < characters.count && characters[j].isUppercase
 
             if endsSentence && nextIsUpper {
-                // Real paragraph break — replace \n with \n\n
                 replacements.append((location: i, length: 1, replacement: "\n\n"))
             } else {
-                // Line wrap — replace \n with space
                 replacements.append((location: i, length: 1, replacement: " "))
             }
 
             i += 1
         }
 
-        // Apply in reverse to keep indices valid
         for rep in replacements.reversed() {
             mutable.replaceCharacters(in: NSRange(location: rep.location, length: rep.length), with: rep.replacement)
         }
