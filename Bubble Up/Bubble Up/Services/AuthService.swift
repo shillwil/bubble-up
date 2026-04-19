@@ -11,6 +11,7 @@ final class AuthService {
     private(set) var currentUserEmail: String?
     private(set) var isAuthenticated = false
     private(set) var isFriendsAndFamily = false
+    private(set) var isAdmin = false
 
     private let keychainService: KeychainService
     private let client: SupabaseClient
@@ -30,12 +31,14 @@ final class AuthService {
                         self.currentUserEmail = user.email
                         self.isAuthenticated = true
                         await self.checkFriendsAndFamilyStatus()
+                        await self.checkAdminStatus()
                     }
                 case .signedOut:
                     self.currentUserID = nil
                     self.currentUserEmail = nil
                     self.isAuthenticated = false
                     self.isFriendsAndFamily = false
+                    self.isAdmin = false
                 default:
                     break
                 }
@@ -54,6 +57,7 @@ final class AuthService {
         currentUserEmail = session.user.email
         isAuthenticated = true
         await checkFriendsAndFamilyStatus()
+        await checkAdminStatus()
     }
 
     func signUpWithEmail(_ email: String, password: String, inviteCode: String? = nil) async throws {
@@ -101,6 +105,7 @@ final class AuthService {
         currentUserEmail = session.user.email
         isAuthenticated = true
         await checkFriendsAndFamilyStatus()
+        await checkAdminStatus()
     }
 
     private func performAppleSignIn() async throws -> ASAuthorization {
@@ -128,6 +133,7 @@ final class AuthService {
         currentUserEmail = nil
         isAuthenticated = false
         isFriendsAndFamily = false
+        isAdmin = false
     }
 
     // MARK: - Invite Code
@@ -160,6 +166,7 @@ final class AuthService {
             currentUserEmail = session.user.email
             isAuthenticated = true
             await checkFriendsAndFamilyStatus()
+            await checkAdminStatus()
         } catch {
             // No valid session — user stays on login screen
             isAuthenticated = false
@@ -184,6 +191,36 @@ final class AuthService {
         } catch {
             isFriendsAndFamily = false
         }
+    }
+
+    // MARK: - Admin
+
+    private func checkAdminStatus() async {
+        struct AdminCheckResponse: Decodable {
+            let isAdmin: Bool
+        }
+
+        do {
+            let result: AdminCheckResponse = try await client.functions.invoke(
+                "generate-invite-code",
+                options: .init(body: ["action": "check-admin"])
+            )
+            isAdmin = result.isAdmin
+        } catch {
+            isAdmin = false
+        }
+    }
+
+    func generateInviteCode(name: String) async throws -> String {
+        struct GenerateResponse: Decodable {
+            let code: String
+        }
+
+        let result: GenerateResponse = try await client.functions.invoke(
+            "generate-invite-code",
+            options: .init(body: ["action": "generate", "name": name])
+        )
+        return result.code
     }
 }
 

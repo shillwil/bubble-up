@@ -11,6 +11,7 @@ struct ProfileView: View {
 
     @State private var showAPIKeyManagement = false
     @State private var showInviteCode = false
+    @State private var showGenerateInviteCode = false
 
     var body: some View {
         ScrollView {
@@ -41,6 +42,9 @@ struct ProfileView: View {
         }
         .navigationDestination(isPresented: $showInviteCode) {
             InviteCodeView()
+        }
+        .navigationDestination(isPresented: $showGenerateInviteCode) {
+            GenerateInviteCodeView()
         }
     }
 
@@ -158,6 +162,13 @@ struct ProfileView: View {
             // Invite Code
             Button { showInviteCode = true } label: {
                 settingRow("REDEEM INVITE CODE", icon: "ticket.fill")
+            }
+
+            // Generate Invite Code (admin only)
+            if authService.isAdmin {
+                Button { showGenerateInviteCode = true } label: {
+                    settingRow("GENERATE INVITE CODE", icon: "plus.rectangle.on.rectangle")
+                }
             }
         }
     }
