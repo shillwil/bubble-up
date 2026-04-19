@@ -46,6 +46,7 @@ struct FeedView: View {
                     .scrollTargetLayout()
                 }
                 .scrollTargetBehavior(.paging)
+                .ignoresSafeArea(edges: .top)
             }
 
             // Floating add button
@@ -54,6 +55,7 @@ struct FeedView: View {
         .background(Color.bubbleUpBackground(for: colorScheme))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)
+        .ignoresSafeArea(edges: .top)
         .sheet(isPresented: $showAddLink) {
             AddLinkView()
         }
@@ -88,7 +90,7 @@ struct FeedView: View {
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 22, weight: .semibold))
-                .foregroundColor(.white)
+                .foregroundColor(Color.bubbleUpBackground(for: colorScheme))
                 .frame(width: 56, height: 56)
                 .background(Color.bubbleUpText(for: colorScheme))
                 .clipShape(Circle())
