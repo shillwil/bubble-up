@@ -2,6 +2,12 @@ import Foundation
 import Supabase
 
 /// F&F summary provider — routes through Supabase Edge Functions.
+///
+/// Note: for AI-generated titles to land on items where the user didn't
+/// supply one, the `summarize-link` Edge Function must also return a
+/// `title` field in its JSON response. `SummaryResult.title` is optional,
+/// so responses without it decode cleanly and just fall back to the URL-
+/// derived title in `RequestScheduler.writeSummaryResult`.
 struct SupabaseSummaryProvider: SummaryProvider {
     let providerName = "Supabase (F&F)"
 

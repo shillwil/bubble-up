@@ -7,6 +7,7 @@ struct FeedCardView: View {
     var bottomInset: CGFloat = 0
     @Environment(LibraryItemsRepository.self) private var repository
     @Environment(\.colorScheme) private var colorScheme
+    @ScaledMetric(relativeTo: .largeTitle) private var titleSize: CGFloat = 36
     @State private var showArticleDetail = false
     @State private var showDeleteConfirmation = false
 
@@ -26,10 +27,11 @@ struct FeedCardView: View {
 
                     // Title
                     Text(item.title ?? "Untitled")
-                        .font(.display(36, weight: .bold))
+                        .font(.display(titleSize, weight: .bold))
                         .foregroundColor(Color.bubbleUpText(for: colorScheme))
                         .tracking(-0.5)
                         .lineLimit(3)
+                        .minimumScaleFactor(0.7)
                         .padding(.bottom, 12)
 
                     // Meta line

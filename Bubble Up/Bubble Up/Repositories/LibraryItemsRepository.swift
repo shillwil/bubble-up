@@ -50,7 +50,7 @@ final class LibraryItemsRepository {
 
         let item = LibraryItem(
             context: viewContext,
-            title: title ?? "Loading...",
+            title: title ?? LibraryItem.titlePlaceholder,
             itemType: .link,
             url: url,
             tags: tags

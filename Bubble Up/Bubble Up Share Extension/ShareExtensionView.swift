@@ -9,6 +9,7 @@ struct ShareExtensionView: View {
     var onCancel: () -> Void
 
     @State private var tagsText: String = ""
+    @State private var editableTitle: String = ""
     @State private var isSaved = false
 
     var body: some View {
@@ -79,17 +80,44 @@ struct ShareExtensionView: View {
                 filePreviewRow(icon: "video.fill", label: sharedTitle.isEmpty ? "Video" : sharedTitle, typeLabel: "VIDEO")
             }
 
+            // Title input (editable; prefilled from extracted sharedTitle)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("TITLE (OPTIONAL)")
+                    .font(.system(size: 12, weight: .semibold))
+                    .tracking(1.5)
+                    .foregroundColor(Color(hex: 0x82817D))
+
+                TextField("Leave blank to auto-generate…", text: $editableTitle)
+                    .font(.system(size: 15))
+                    .foregroundColor(Color(hex: 0x1A1A1A))
+                    .autocorrectionDisabled()
+                    .padding(.bottom, 8)
+                    .overlay(alignment: .bottom) {
+                        Rectangle()
+                            .fill(Color(hex: 0xE5E4E0))
+                            .frame(height: 1)
+                    }
+            }
+            .padding(.bottom, 16)
+
             // Tag input
-            TextField("Add tags, comma separated...", text: $tagsText)
-                .font(.system(size: 15))
-                .foregroundColor(Color(hex: 0x1A1A1A))
-                .padding(.bottom, 8)
-                .overlay(alignment: .bottom) {
-                    Rectangle()
-                        .fill(Color(hex: 0xE5E4E0))
-                        .frame(height: 1)
-                }
-                .padding(.bottom, 16)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("TAGS (OPTIONAL)")
+                    .font(.system(size: 12, weight: .semibold))
+                    .tracking(1.5)
+                    .foregroundColor(Color(hex: 0x82817D))
+
+                TextField("tech, design, reading…", text: $tagsText)
+                    .font(.system(size: 15))
+                    .foregroundColor(Color(hex: 0x1A1A1A))
+                    .padding(.bottom, 8)
+                    .overlay(alignment: .bottom) {
+                        Rectangle()
+                            .fill(Color(hex: 0xE5E4E0))
+                            .frame(height: 1)
+                    }
+            }
+            .padding(.bottom, 16)
 
             // Save button
             Button {
@@ -106,7 +134,8 @@ struct ShareExtensionView: View {
                     }
                 }()
                 let urlToSave = contentType == "link" ? sharedURL : nil
-                onSave(urlToSave, sharedTitle.isEmpty ? nil : sharedTitle, tags, localFileName, mimeType)
+                let trimmedTitle = editableTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                onSave(urlToSave, trimmedTitle.isEmpty ? nil : trimmedTitle, tags, localFileName, mimeType)
                 isSaved = true
             } label: {
                 Text("SAVE")
@@ -127,6 +156,12 @@ struct ShareExtensionView: View {
                 .fill(Color(hex: 0xF5F4F0))
                 .ignoresSafeArea(edges: .bottom)
         )
+        .onAppear {
+            if editableTitle.isEmpty { editableTitle = sharedTitle }
+        }
+        .onChange(of: sharedTitle) { _, newValue in
+            if editableTitle.isEmpty { editableTitle = newValue }
+        }
     }
 
     private func filePreviewRow(icon: String, label: String, typeLabel: String) -> some View {

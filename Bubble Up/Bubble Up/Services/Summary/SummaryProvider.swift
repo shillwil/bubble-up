@@ -24,6 +24,16 @@ struct SummaryResult: Sendable, Codable {
     let summary: String
     let bullets: [String]
     let estimatedReadTime: Int?
+    /// AI-generated concise title. Optional so older cached responses and
+    /// providers that don't return a title still decode cleanly.
+    let title: String?
+
+    init(summary: String, bullets: [String], estimatedReadTime: Int?, title: String? = nil) {
+        self.summary = summary
+        self.bullets = bullets
+        self.estimatedReadTime = estimatedReadTime
+        self.title = title
+    }
 }
 
 struct BookSummaryResult: Sendable, Codable {

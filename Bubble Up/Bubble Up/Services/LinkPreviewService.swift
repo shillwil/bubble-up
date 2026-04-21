@@ -13,7 +13,7 @@ final class LinkPreviewService {
         do {
             let metadata = try await provider.startFetchingMetadata(for: url)
 
-            if let title = metadata.title, item.title == "Loading..." || item.title?.isEmpty == true {
+            if let title = metadata.title, item.title == LibraryItem.titlePlaceholder || item.title?.isEmpty == true {
                 item.title = title
             }
 

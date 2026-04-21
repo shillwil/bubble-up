@@ -4,6 +4,11 @@ import CoreData
 @objc(LibraryItem)
 public class LibraryItem: NSManagedObject {
 
+    /// Placeholder used while a real title is pending (from user input, content
+    /// extraction, or AI generation). Treat any item with this exact title as
+    /// still needing a real one.
+    static let titlePlaceholder = "Loading..."
+
     /// Convenience initializer for creating a new library item.
     convenience init(
         context: NSManagedObjectContext,

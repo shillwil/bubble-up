@@ -145,14 +145,14 @@ actor RequestScheduler {
             let processor = ContentProcessorFactory.processor(for: url)
             let extracted = try await processor.extractContent(from: url)
             content = extracted.textContent ?? ""
-            if extractedTitle == "Loading..." || extractedTitle?.isEmpty == true {
+            if extractedTitle == LibraryItem.titlePlaceholder || extractedTitle?.isEmpty == true {
                 extractedTitle = extracted.title
             }
 
-            // If still no title after extraction, derive from URL
-            if extractedTitle == nil || extractedTitle == "Loading..." || extractedTitle?.isEmpty == true {
-                extractedTitle = Self.titleFromURL(urlString)
-            }
+            // If extraction didn't find a title, leave it as the placeholder so
+            // the AI-generated title (or URL fallback) can claim it in
+            // writeSummaryResult. Avoid URL-deriving here — a real AI title is
+            // better than a hostname.
 
             // Short-content bypass: memes, one-liners, and image-only tweets/reddit
             // posts shouldn't be summarized — rendering the extracted content verbatim
@@ -167,7 +167,7 @@ actor RequestScheduler {
                 fetchRequest.fetchLimit = 1
                 if let item = try? context.fetch(fetchRequest).first {
                     item.rawContent = content
-                    if let title = extractedTitle, item.title == "Loading..." || item.title?.isEmpty == true {
+                    if let title = extractedTitle, item.title == LibraryItem.titlePlaceholder || item.title?.isEmpty == true {
                         item.title = title
                     }
                     if let author = extracted.authorName, item.authorName?.isEmpty != false {
@@ -214,7 +214,8 @@ actor RequestScheduler {
                 itemID: snapshot.libraryItemID,
                 summary: result.summary,
                 bullets: result.bullets,
-                estimatedReadTime: result.estimatedReadTime
+                estimatedReadTime: result.estimatedReadTime,
+                aiTitle: result.title
             )
             self.markRequestCompleted(context: context, requestID: snapshot.id)
         }
@@ -315,7 +316,7 @@ actor RequestScheduler {
             fetchRequest.predicate = NSPredicate(format: "id == %@", snapshot.libraryItemID as CVarArg)
             fetchRequest.fetchLimit = 1
             if let item = try? context.fetch(fetchRequest).first {
-                if let title = extractedTitle, item.title == "Loading..." || item.title?.isEmpty == true {
+                if let title = extractedTitle, item.title == LibraryItem.titlePlaceholder || item.title?.isEmpty == true {
                     item.title = title
                 }
                 if let author = extracted.authorName {
@@ -366,7 +367,8 @@ actor RequestScheduler {
                 itemID: snapshot.libraryItemID,
                 summary: result.summary,
                 bullets: result.bullets,
-                estimatedReadTime: result.estimatedReadTime
+                estimatedReadTime: result.estimatedReadTime,
+                aiTitle: result.title
             )
             self.markRequestCompleted(context: context, requestID: snapshot.id)
         }
@@ -411,7 +413,7 @@ actor RequestScheduler {
             let extracted = try await processor.extractContent(from: sourceURL)
             content = extracted.textContent ?? ""
 
-            if extractedTitle == "Loading..." || extractedTitle?.isEmpty == true {
+            if extractedTitle == LibraryItem.titlePlaceholder || extractedTitle?.isEmpty == true {
                 extractedTitle = extracted.title
             }
 
@@ -432,7 +434,7 @@ actor RequestScheduler {
                 fetchRequest.fetchLimit = 1
                 if let item = try? context.fetch(fetchRequest).first {
                     item.rawContent = content
-                    if let title = extractedTitle, item.title == "Loading..." || item.title?.isEmpty == true {
+                    if let title = extractedTitle, item.title == LibraryItem.titlePlaceholder || item.title?.isEmpty == true {
                         item.title = title
                     }
                     if let author = extracted.authorName {
@@ -474,7 +476,8 @@ actor RequestScheduler {
                 itemID: snapshot.libraryItemID,
                 summary: result.summary,
                 bullets: result.bullets,
-                estimatedReadTime: result.estimatedReadTime
+                estimatedReadTime: result.estimatedReadTime,
+                aiTitle: result.title
             )
             self.markRequestCompleted(context: context, requestID: snapshot.id)
         }
@@ -506,16 +509,22 @@ actor RequestScheduler {
         itemID: UUID,
         summary: String,
         bullets: [String],
-        estimatedReadTime: Int?
+        estimatedReadTime: Int?,
+        aiTitle: String? = nil
     ) {
         let fetchRequest = LibraryItem.fetchRequest()
         fetchRequest.predicate = NSPredicate(format: "id == %@", itemID as CVarArg)
         fetchRequest.fetchLimit = 1
         guard let item = try? context.fetch(fetchRequest).first else { return }
 
-        // Safety net: if title is still "Loading...", derive from URL
-        if item.title == "Loading..." || item.title?.isEmpty == true {
-            if let urlString = item.url {
+        // If the title is still the placeholder (user didn't provide one and
+        // extraction didn't find one), prefer the AI-generated title; fall
+        // back to a URL-derived title so items never render as "Loading...".
+        if item.title == LibraryItem.titlePlaceholder || item.title?.isEmpty == true {
+            let trimmedAI = aiTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let ai = trimmedAI, !ai.isEmpty {
+                item.title = ai
+            } else if let urlString = item.url {
                 item.title = Self.titleFromURL(urlString)
             }
         }

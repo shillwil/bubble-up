@@ -82,7 +82,9 @@ struct OpenAISummaryProvider: SummaryProvider {
     private func buildLinkSummaryPrompt(content: String, title: String?, url: String) -> String {
         """
         Summarize the following article. Return a JSON object:
-        {"summary": "1-2 sentences", "bullets": ["point 1", "point 2", "point 3"], "estimatedReadTime": 5}
+        {"title": "concise 3-8 word title", "summary": "1-2 sentences", "bullets": ["point 1", "point 2", "point 3"], "estimatedReadTime": 5}
+
+        For "title": a concise, descriptive 3-8 word title that captures the article's subject. If a Title is provided below and is descriptive, you may return a lightly shortened version of it; otherwise generate one from the content.
 
         Title: \(title ?? "Unknown")
         URL: \(url)

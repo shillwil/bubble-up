@@ -7,6 +7,7 @@ struct AddLinkView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var urlText = ""
+    @State private var titleText = ""
     @State private var tagsText = ""
     @State private var isSaving = false
     @State private var showDuplicateMessage = false
@@ -34,6 +35,24 @@ struct AddLinkView: View {
                             .font(.bodyText())
                             .keyboardType(.URL)
                             .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .padding(.bottom, 8)
+                            .overlay(alignment: .bottom) {
+                                Rectangle()
+                                    .fill(Color.bubbleUpBorder(for: colorScheme))
+                                    .frame(height: 1)
+                            }
+                    }
+
+                    // Title field
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("TITLE (OPTIONAL)")
+                            .font(.system(size: 12, weight: .semibold))
+                            .tracking(1.5)
+                            .foregroundColor(Color.bubbleUpTextMuted(for: colorScheme))
+
+                        TextField("Leave blank to auto-generate…", text: $titleText)
+                            .font(.bodyText())
                             .autocorrectionDisabled()
                             .padding(.bottom, 8)
                             .overlay(alignment: .bottom) {
@@ -145,8 +164,14 @@ struct AddLinkView: View {
             finalURL = "https://" + finalURL
         }
 
+        let trimmedTitle = titleText.trimmingCharacters(in: .whitespacesAndNewlines)
+
         isSaving = true
-        let result = repository.saveLink(url: finalURL, tags: tags)
+        let result = repository.saveLink(
+            url: finalURL,
+            title: trimmedTitle.isEmpty ? nil : trimmedTitle,
+            tags: tags
+        )
 
         if result.isExisting {
             showDuplicateMessage = true

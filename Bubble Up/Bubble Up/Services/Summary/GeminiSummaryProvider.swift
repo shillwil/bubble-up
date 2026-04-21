@@ -83,12 +83,14 @@ struct GeminiSummaryProvider: SummaryProvider {
         """
         Summarize the following article. Return your response as a JSON object with this exact structure:
         {
+            "title": "Concise 3-8 word title",
             "summary": "A 1-2 sentence summary of the article",
             "bullets": ["bullet point 1", "bullet point 2", "bullet point 3"],
             "estimatedReadTime": 5
         }
 
         Rules:
+        - title is a concise, descriptive 3-8 word title capturing the article's subject. If the Title below is descriptive, you may return a lightly shortened version of it; otherwise generate one from the content.
         - The summary should be 1-2 concise sentences capturing the main idea
         - Provide exactly 3 bullet points, each one sentence, highlighting key insights
         - estimatedReadTime is in minutes, estimate based on article length
