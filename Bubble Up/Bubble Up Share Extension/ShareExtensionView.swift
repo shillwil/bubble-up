@@ -5,6 +5,7 @@ struct ShareExtensionView: View {
     @Binding var sharedTitle: String
     @Binding var contentType: String
     @Binding var localFileName: String?
+    var previewState: PreviewState
     var onSave: (String?, String?, [String], String?, String?) -> Void
     var onCancel: () -> Void
 
@@ -13,18 +14,19 @@ struct ShareExtensionView: View {
     @State private var isSaved = false
 
     var body: some View {
-        ZStack {
-            // Dimmed background
-            Color.black.opacity(0.4)
-                .ignoresSafeArea()
-                .onTapGesture { onCancel() }
+        VStack(spacing: 0) {
+            // Rich content preview (URL OG image, PDF first page, image, video frame)
+            ContentPreviewView(
+                previewState: previewState,
+                contentType: contentType,
+                title: sharedTitle,
+                onTap: { onCancel() }
+            )
 
             // Bottom sheet
-            VStack {
-                Spacer()
-                sheetContent
-            }
+            sheetContent
         }
+        .ignoresSafeArea(edges: .top)
     }
 
     private var sheetContent: some View {
