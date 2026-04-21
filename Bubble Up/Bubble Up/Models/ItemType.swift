@@ -23,6 +23,9 @@ enum SummaryStatus: String, Sendable {
     case generating
     case completed
     case failed
+    /// Content was too short or media-only to benefit from AI summarization.
+    /// The UI should render the extracted raw content verbatim instead of summary/bullets.
+    case skipped
 }
 
 /// Priority level for pending requests.

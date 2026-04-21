@@ -156,7 +156,10 @@ struct BookSummaryView: View {
     @ViewBuilder
     private func summaryContent(for item: LibraryItem) -> some View {
         switch item.summaryStatusEnum {
-        case .completed:
+        case .completed, .skipped:
+            // .skipped doesn't occur for book summaries (no URL extraction step),
+            // but we route it through the completed renderer defensively so future
+            // short-content code paths don't surprise this view.
             // Elevator pitch as blockquote
             if let firstBullet = item.summaryBulletsArray.first, !firstBullet.isEmpty {
                 ArticleBlockquote(text: firstBullet)

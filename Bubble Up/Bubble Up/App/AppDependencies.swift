@@ -36,6 +36,9 @@ final class AppDependencies {
     /// Starts background services. Restores auth session FIRST, then starts scheduler and sync.
     func startServices() {
         Task {
+            // Wire up sync engine to scheduler so completed summaries get pushed
+            await requestScheduler.setSyncEngine(syncEngine)
+
             // 1. Restore auth session so the Supabase client has a valid JWT
             await authService.restoreSession()
 

@@ -6,6 +6,7 @@ actor RequestScheduler {
     private let persistenceController: PersistenceController
     private let keychainService: KeychainService
     private var isProcessing = false
+    var syncEngine: SyncEngine?
 
     init(persistenceController: PersistenceController, keychainService: KeychainService) {
         self.persistenceController = persistenceController
@@ -13,6 +14,10 @@ actor RequestScheduler {
     }
 
     // MARK: - Public API
+
+    func setSyncEngine(_ engine: SyncEngine) {
+        self.syncEngine = engine
+    }
 
     /// Resume any pending/interrupted requests on app launch.
     func resumePendingRequests() async {
@@ -134,6 +139,7 @@ actor RequestScheduler {
         // 2. Extract content from the web page if not already cached
         var content = itemInfo.rawContent ?? ""
         var extractedTitle = itemInfo.title
+        var didSkipAI = false
 
         if content.isEmpty {
             let processor = ContentProcessorFactory.processor(for: url)
@@ -148,6 +154,12 @@ actor RequestScheduler {
                 extractedTitle = Self.titleFromURL(urlString)
             }
 
+            // Short-content bypass: memes, one-liners, and image-only tweets/reddit
+            // posts shouldn't be summarized — rendering the extracted content verbatim
+            // gives a better UX than a one-bullet "summary" or a failure card.
+            let wordCount = content.split { $0.isWhitespace }.count
+            let shouldSkipAI = wordCount < Self.shortContentWordThreshold
+
             // Cache the extracted content and metadata back to the item
             await context.perform {
                 let fetchRequest = LibraryItem.fetchRequest()
@@ -158,19 +170,36 @@ actor RequestScheduler {
                     if let title = extractedTitle, item.title == "Loading..." || item.title?.isEmpty == true {
                         item.title = title
                     }
+                    if let author = extracted.authorName, item.authorName?.isEmpty != false {
+                        item.authorName = author
+                    }
                     if let readTime = extracted.estimatedReadTime {
                         item.estimatedReadTime = Int16(readTime)
                     }
                     if let thumbnailURL = extracted.thumbnailURL {
                         item.thumbnailURL = thumbnailURL.absoluteString
                     }
-                    item.summaryStatusEnum = .generating
+                    item.contentMimeType = extracted.contentMimeType
+                    item.summaryStatusEnum = shouldSkipAI ? .skipped : .generating
                     try? context.save()
                 }
             }
+
+            didSkipAI = shouldSkipAI
         }
 
-        // 3. Generate summary
+        // 3. If we skipped the AI, mark the request done and kick off thumbnail
+        //    download — the reader will render rawContent directly.
+        if didSkipAI {
+            await context.perform {
+                self.markRequestCompleted(context: context, requestID: snapshot.id)
+            }
+            await syncEngine?.enqueuePush()
+            await downloadSavedThumbnail(for: snapshot.libraryItemID, context: context)
+            return
+        }
+
+        // 4. Generate summary
         let provider = getSummaryProvider(for: snapshot.requestType)
         let result = try await provider.generateLinkSummary(
             content: content,
@@ -178,7 +207,7 @@ actor RequestScheduler {
             url: urlString
         )
 
-        // 4. Write result back
+        // 5. Write result back
         await context.perform {
             self.writeSummaryResult(
                 context: context,
@@ -190,16 +219,26 @@ actor RequestScheduler {
             self.markRequestCompleted(context: context, requestID: snapshot.id)
         }
 
-        // 5. Download thumbnail image for offline use
+        await syncEngine?.enqueuePush()
+
+        // 6. Download thumbnail image for offline use
+        await downloadSavedThumbnail(for: snapshot.libraryItemID, context: context)
+    }
+
+    /// Content shorter than this (in whitespace-delimited tokens) skips the AI
+    /// call and is rendered verbatim. 40 ≈ what a reader can parse at a glance.
+    private static let shortContentWordThreshold = 40
+
+    private func downloadSavedThumbnail(for itemID: UUID, context: NSManagedObjectContext) async {
         let savedThumbnailURL: String? = await context.perform {
             let fetchRequest = LibraryItem.fetchRequest()
-            fetchRequest.predicate = NSPredicate(format: "id == %@", snapshot.libraryItemID as CVarArg)
+            fetchRequest.predicate = NSPredicate(format: "id == %@", itemID as CVarArg)
             fetchRequest.fetchLimit = 1
             return try? context.fetch(fetchRequest).first?.thumbnailURL
         }
         if let thumbnailURLString = savedThumbnailURL, let thumbnailURL = URL(string: thumbnailURLString) {
             Task {
-                await self.downloadThumbnail(itemID: snapshot.libraryItemID, from: thumbnailURL)
+                await self.downloadThumbnail(itemID: itemID, from: thumbnailURL)
             }
         }
     }
@@ -236,6 +275,8 @@ actor RequestScheduler {
             )
             self.markRequestCompleted(context: context, requestID: snapshot.id)
         }
+
+        await syncEngine?.enqueuePush()
 
         // Fetch book cover image
         Task {
@@ -329,6 +370,8 @@ actor RequestScheduler {
             )
             self.markRequestCompleted(context: context, requestID: snapshot.id)
         }
+
+        await syncEngine?.enqueuePush()
 
         // 5. Download thumbnail
         if let thumbnailURL = extracted.thumbnailURL {
@@ -435,6 +478,8 @@ actor RequestScheduler {
             )
             self.markRequestCompleted(context: context, requestID: snapshot.id)
         }
+
+        await syncEngine?.enqueuePush()
     }
 
     // MARK: - Provider Selection
@@ -482,6 +527,9 @@ actor RequestScheduler {
             item.estimatedReadTime = Int16(readTime)
         }
         item.updatedAt = Date()
+        if item.syncStatus == SyncStatus.synced.rawValue {
+            item.syncStatus = SyncStatus.pendingUpdate.rawValue
+        }
         try? context.save()
     }
 
@@ -501,6 +549,9 @@ actor RequestScheduler {
         item.summaryBulletsArray = [elevatorPitch]
         item.summaryStatusEnum = .completed
         item.updatedAt = Date()
+        if item.syncStatus == SyncStatus.synced.rawValue {
+            item.syncStatus = SyncStatus.pendingUpdate.rawValue
+        }
 
         for (index, page) in pages.enumerated() {
             let _ = PagedItem(

@@ -1,4 +1,25 @@
 import SwiftUI
+import Observation
+
+/// Reference-typed holder for the scroll progress so that writes don't
+/// invalidate the parent view's body. `ArticleDetailView` holds the model
+/// but never reads `progress.value` in its own body — only the
+/// `ReadingProgressBarSubscriber` subview reads it. SwiftUI's Observation
+/// framework therefore only rebuilds the subscriber subview on scroll,
+/// leaving the (expensive) Reddit hierarchy untouched.
+@Observable
+@MainActor
+final class ScrollProgressModel {
+    var value: Double = 0
+}
+
+/// Reads the progress value, so it — and only it — re-evaluates on scroll.
+private struct ReadingProgressBarSubscriber: View {
+    let model: ScrollProgressModel
+    var body: some View {
+        ReadingProgressBar(progress: model.value)
+    }
+}
 
 /// Full article reader view with reading progress bar, editorial typography.
 struct ArticleDetailView: View {
@@ -6,13 +27,14 @@ struct ArticleDetailView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
 
-    @State private var readingProgress: Double = 0
+    @State private var scrollProgress = ScrollProgressModel()
     @State private var showWebView = false
 
     var body: some View {
         ZStack(alignment: .top) {
-            // Reading progress bar at very top
-            ReadingProgressBar(progress: readingProgress)
+            // Reading progress bar at very top. The bar reads `scrollProgress.value`
+            // inside its own body, so only this subview invalidates on scroll.
+            ReadingProgressBarSubscriber(model: scrollProgress)
                 .zIndex(1)
 
             ScrollView {
@@ -25,9 +47,12 @@ struct ArticleDetailView: View {
             }
             .onScrollGeometryChange(for: Double.self) { geo in
                 let contentHeight = geo.contentSize.height - geo.containerSize.height
-                return contentHeight > 0 ? geo.contentOffset.y / contentHeight : 0
+                let raw = contentHeight > 0 ? geo.contentOffset.y / contentHeight : 0
+                // Round to 1% so the action fires at most ~100 times per full
+                // scroll instead of per sub-pixel.
+                return (raw * 100).rounded() / 100
             } action: { _, newValue in
-                readingProgress = min(max(newValue, 0), 1)
+                scrollProgress.value = min(max(newValue, 0), 1)
             }
         }
         .background(Color.bubbleUpBackground(for: colorScheme))
@@ -122,11 +147,13 @@ struct ArticleDetailView: View {
 
     private var articleBody: some View {
         VStack(alignment: .leading, spacing: 24) {
-            if let summary = item.summary, !summary.isEmpty {
-                // Drop cap on first paragraph
+            // Summary + key takeaways are only shown when the AI actually ran.
+            // For `.skipped` items (memes, one-liners, image-only posts) we jump
+            // straight to the reader section below.
+            if item.summaryStatusEnum != .skipped,
+               let summary = item.summary, !summary.isEmpty {
                 DropCapText(text: summary)
 
-                // Bullet points as key takeaways
                 if !item.summaryBulletsArray.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Key Takeaways")
@@ -141,6 +168,8 @@ struct ArticleDetailView: View {
                 LoadingStateView("Generating summary")
                     .frame(height: 200)
             }
+
+            readerSection
 
             // View full article button
             if item.url != nil {
@@ -166,6 +195,33 @@ struct ArticleDetailView: View {
         }
         .padding(.horizontal, BubbleUpTheme.paddingHorizontal)
         .padding(.bottom, 60)
+    }
+
+    // MARK: - Reader Section
+
+    /// Renders the extracted raw content in-app, branching by content type so
+    /// tweets and reddit posts get structured cards instead of a wall of text.
+    @ViewBuilder
+    private var readerSection: some View {
+        if let raw = item.rawContent, !raw.isEmpty {
+            switch item.contentMimeType {
+            case "application/twitter":
+                TweetReaderCard(rawContent: raw)
+                    .padding(.top, item.summaryStatusEnum == .skipped ? 0 : 16)
+            case "application/reddit":
+                RedditReaderCard(rawContent: raw)
+                    .padding(.top, item.summaryStatusEnum == .skipped ? 0 : 16)
+            default:
+                // Only show the article reader for items where the AI summary
+                // ran — showing the full article text alongside a still-loading
+                // summary would be visually noisy. Skipped items don't route here
+                // (they use the tweet/reddit cards above).
+                if item.summaryStatusEnum == .completed {
+                    ArticleReaderSection(rawContent: raw)
+                        .padding(.top, 16)
+                }
+            }
+        }
     }
 
     // MARK: - Comments

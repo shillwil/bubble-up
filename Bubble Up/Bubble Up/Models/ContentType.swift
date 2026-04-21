@@ -5,6 +5,8 @@ import Foundation
 enum ContentType: Sendable {
     case webArticle
     case youtube
+    case reddit
+    case twitter
     case pdf
     case wordDoc
     case epub
@@ -44,6 +46,18 @@ enum ContentType: Sendable {
             return .youtube
         }
 
+        // Reddit detection (including old.reddit.com, np.reddit.com, redd.it)
+        if host.contains("reddit.com") || host == "redd.it" || host.hasSuffix(".redd.it") {
+            return .reddit
+        }
+
+        // Twitter / X detection (including t.co short links)
+        if host == "twitter.com" || host.hasSuffix(".twitter.com")
+            || host == "x.com" || host.hasSuffix(".x.com")
+            || host == "t.co" {
+            return .twitter
+        }
+
         // File extension detection
         switch pathExtension {
         case "pdf":
@@ -65,6 +79,8 @@ enum ContentType: Sendable {
         switch self {
         case .webArticle: return "text/html"
         case .youtube: return "video/youtube"
+        case .reddit: return "application/reddit"
+        case .twitter: return "application/twitter"
         case .pdf: return "application/pdf"
         case .wordDoc: return "application/msword"
         case .epub: return "application/epub+zip"

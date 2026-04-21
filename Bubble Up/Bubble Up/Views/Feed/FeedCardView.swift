@@ -147,6 +147,17 @@ struct FeedCardView: View {
         switch item.summaryStatusEnum {
         case .completed:
             RedBulletList(bullets: item.summaryBulletsArray)
+        case .skipped:
+            // Short / media-only content (memes, one-liners). Show a plain-text
+            // preview of the extracted body so the card still says something.
+            if let preview = skippedContentPreview {
+                Text(preview)
+                    .font(.bodyText(15))
+                    .foregroundColor(Color.bubbleUpText(for: colorScheme).opacity(0.9))
+                    .lineSpacing(4)
+                    .lineLimit(4)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         case .pending, .generating:
             FeedSkeletonCard()
         case .failed:
@@ -215,5 +226,26 @@ struct FeedCardView: View {
 
     private func retrySummary() {
         repository.retryRequest(for: item)
+    }
+
+    // MARK: - Skipped preview
+
+    /// For `.skipped` items, pull a clean body preview out of rawContent so the
+    /// card reads as content rather than an empty frame.
+    private var skippedContentPreview: String? {
+        guard let raw = item.rawContent, !raw.isEmpty else { return nil }
+
+        let body: String
+        switch item.contentMimeType {
+        case "application/twitter":
+            body = SocialPostCodec.decode(raw, platform: .twitter)?.body ?? raw
+        case "application/reddit":
+            body = SocialPostCodec.decode(raw, platform: .reddit)?.body ?? raw
+        default:
+            body = raw
+        }
+
+        let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }

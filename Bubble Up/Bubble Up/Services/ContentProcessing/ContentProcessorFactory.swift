@@ -4,11 +4,16 @@ import Foundation
 /// Register new processors here when adding support for new content types.
 enum ContentProcessorFactory {
     private static let processors: [ContentProcessor] = [
-        WebArticleProcessor(),
+        // Domain-specific processors must be listed before WebArticleProcessor,
+        // because WebArticleProcessor matches the broad `.webArticle` content type
+        // which is also the fallback for unknown hosts.
         YouTubeProcessor(),
+        RedditProcessor(),
+        TwitterProcessor(),
         PDFProcessor(),
         ImageProcessor(),
         VideoProcessor(),
+        WebArticleProcessor(),
         DefaultProcessor()
     ]
 
