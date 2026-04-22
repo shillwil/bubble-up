@@ -30,7 +30,6 @@ struct FeedCardView: View {
                         .foregroundColor(Color.bubbleUpText(for: colorScheme))
                         .tracking(-0.5)
                         .lineLimit(3)
-                        .minimumScaleFactor(0.6)
                         .padding(.bottom, 12)
 
                     // Meta line

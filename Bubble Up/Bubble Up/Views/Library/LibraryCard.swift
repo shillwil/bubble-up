@@ -50,7 +50,6 @@ struct LibraryCard: View {
                 .font(.system(.subheadline, design: .serif, weight: .semibold))
                 .foregroundColor(Color.bubbleUpText(for: colorScheme))
                 .lineLimit(3)
-                .minimumScaleFactor(0.8)
                 .padding(.bottom, 4)
 
             // Source

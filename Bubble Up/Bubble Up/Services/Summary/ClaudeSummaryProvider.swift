@@ -13,13 +13,17 @@ struct ClaudeSummaryProvider: SummaryProvider {
     }
 
     func generateLinkSummary(content: String, title: String?, url: String) async throws -> SummaryResult {
+        // Use tool calling with a forced schema so Claude can't silently drop
+        // the `title` field (it did this consistently with plain JSON prompts).
         let prompt = buildLinkSummaryPrompt(content: content, title: title, url: url)
-        let responseText = try await callClaudeAPI(
+        let input = try await callClaudeToolAPI(
             model: "claude-sonnet-4-6-20250514",
-            systemPrompt: "You are a concise article summarizer. Always respond with valid JSON only.",
-            userPrompt: prompt
+            systemPrompt: "You are a concise article summarizer. Call the record_summary tool with your analysis.",
+            userPrompt: prompt,
+            tool: Self.linkSummaryTool,
+            toolName: "record_summary"
         )
-        return try parseSummaryResult(from: responseText)
+        return try parseSummaryResult(fromToolInput: input)
     }
 
     func generateBookSummary(title: String, author: String?, length: SummaryLength) async throws -> BookSummaryResult {
@@ -32,8 +36,95 @@ struct ClaudeSummaryProvider: SummaryProvider {
         return try parseBookSummaryResult(from: responseText)
     }
 
-    // MARK: - API Call
+    // MARK: - Tool schema
 
+    private static let linkSummaryTool: [String: Any] = [
+        "name": "record_summary",
+        "description": "Records the article/post summary with a concise title.",
+        "input_schema": [
+            "type": "object",
+            "properties": [
+                "title": [
+                    "type": "string",
+                    "description": "A concise 3-8 word title capturing the subject. MUST always be present."
+                ],
+                "summary": [
+                    "type": "string",
+                    "description": "A 1-2 sentence summary of the main idea."
+                ],
+                "bullets": [
+                    "type": "array",
+                    "items": ["type": "string"],
+                    "description": "Exactly 3 single-sentence bullet points with key insights."
+                ],
+                "estimatedReadTime": [
+                    "type": "integer",
+                    "description": "Estimated read time in minutes."
+                ]
+            ],
+            "required": ["title", "summary", "bullets", "estimatedReadTime"]
+        ]
+    ]
+
+    // MARK: - API Calls
+
+    /// Tool-calling variant that forces Claude to produce a schema-conforming
+    /// JSON object (returned as the tool's `input` field).
+    private func callClaudeToolAPI(
+        model: String,
+        systemPrompt: String,
+        userPrompt: String,
+        tool: [String: Any],
+        toolName: String
+    ) async throws -> [String: Any] {
+        let url = URL(string: "https://api.anthropic.com/v1/messages")!
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        request.timeoutInterval = 60
+
+        let body: [String: Any] = [
+            "model": model,
+            "max_tokens": 4096,
+            "system": systemPrompt,
+            "tools": [tool],
+            "tool_choice": ["type": "tool", "name": toolName],
+            "messages": [
+                ["role": "user", "content": userPrompt]
+            ]
+        ]
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw SummaryProviderError.networkError(URLError(.badServerResponse))
+        }
+
+        switch httpResponse.statusCode {
+        case 200: break
+        case 429: throw SummaryProviderError.rateLimitExceeded(retryAfter: nil)
+        default:
+            let message = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw SummaryProviderError.apiError(statusCode: httpResponse.statusCode, message: message)
+        }
+
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let contentArray = json["content"] as? [[String: Any]],
+              let toolUse = contentArray.first(where: { ($0["type"] as? String) == "tool_use" }),
+              let input = toolUse["input"] as? [String: Any] else {
+            print("⚠️ [Claude] tool_use block missing — raw JSON: \(String(data: data, encoding: .utf8)?.prefix(400) ?? "<nil>")")
+            throw SummaryProviderError.decodingFailed
+        }
+
+        return input
+    }
+
+    /// Plain-text variant used for book summaries (no schema forcing needed).
     private func callClaudeAPI(model: String, systemPrompt: String, userPrompt: String) async throws -> String {
         let url = URL(string: "https://api.anthropic.com/v1/messages")!
 
@@ -137,11 +228,13 @@ struct ClaudeSummaryProvider: SummaryProvider {
 
     // MARK: - Parsing
 
-    private func parseSummaryResult(from text: String) throws -> SummaryResult {
-        guard let data = text.data(using: .utf8) else { throw SummaryProviderError.decodingFailed }
+    /// Decodes a `SummaryResult` directly from Claude's tool_use input object
+    /// (no JSON round-trip — the shape is already dictionary form).
+    private func parseSummaryResult(fromToolInput input: [String: Any]) throws -> SummaryResult {
+        let data = try JSONSerialization.data(withJSONObject: input)
         let result = try JSONDecoder().decode(SummaryResult.self, from: data)
         if result.title == nil || result.title?.isEmpty == true {
-            print("⚠️ [Claude] missing/empty title in response — raw text: \(text.prefix(400))")
+            print("⚠️ [Claude] tool returned empty title — input: \(input)")
         }
         return result
     }

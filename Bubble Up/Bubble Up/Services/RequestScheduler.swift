@@ -511,18 +511,19 @@ actor RequestScheduler {
     // MARK: - Provider Selection
 
     private func getSummaryProvider(for requestType: String) -> SummaryProvider {
+        let provider: SummaryProvider
         if let geminiKey = keychainService.get(.geminiAPIKey) {
-            return GeminiSummaryProvider(apiKey: geminiKey)
+            provider = GeminiSummaryProvider(apiKey: geminiKey)
+        } else if let claudeKey = keychainService.get(.claudeAPIKey) {
+            provider = ClaudeSummaryProvider(apiKey: claudeKey)
+        } else if let openAIKey = keychainService.get(.openAIAPIKey) {
+            provider = OpenAISummaryProvider(apiKey: openAIKey)
+        } else {
+            // Default: Supabase Edge Functions (F&F)
+            provider = SupabaseSummaryProvider()
         }
-        if let claudeKey = keychainService.get(.claudeAPIKey) {
-            return ClaudeSummaryProvider(apiKey: claudeKey)
-        }
-        if let openAIKey = keychainService.get(.openAIAPIKey) {
-            return OpenAISummaryProvider(apiKey: openAIKey)
-        }
-
-        // Default: Supabase Edge Functions (F&F)
-        return SupabaseSummaryProvider()
+        print("🤖 [Scheduler] Using provider: \(provider.providerName) for \(requestType)")
+        return provider
     }
 
     // MARK: - Core Data Helpers (called within context.perform)
