@@ -23,6 +23,9 @@ struct SupabaseSummaryProvider: SummaryProvider {
             options: .init(body: body)
         )
 
+        if result.title == nil || result.title?.isEmpty == true {
+            print("⚠️ [Supabase] no title field returned — edge function needs update to include a \"title\" key in its JSON response.")
+        }
         return result
     }
 

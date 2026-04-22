@@ -139,7 +139,11 @@ struct ClaudeSummaryProvider: SummaryProvider {
 
     private func parseSummaryResult(from text: String) throws -> SummaryResult {
         guard let data = text.data(using: .utf8) else { throw SummaryProviderError.decodingFailed }
-        return try JSONDecoder().decode(SummaryResult.self, from: data)
+        let result = try JSONDecoder().decode(SummaryResult.self, from: data)
+        if result.title == nil || result.title?.isEmpty == true {
+            print("⚠️ [Claude] missing/empty title in response — raw text: \(text.prefix(400))")
+        }
+        return result
     }
 
     private func parseBookSummaryResult(from text: String) throws -> BookSummaryResult {

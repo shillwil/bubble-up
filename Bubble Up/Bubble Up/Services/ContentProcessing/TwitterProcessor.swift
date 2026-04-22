@@ -84,16 +84,12 @@ struct TwitterProcessor: ContentProcessor {
         let textContent = SocialPostCodec.encode(post)
         let wordCount = textContent.split(separator: " ").count
 
-        let title: String
-        if let authorName {
-            let snippet = text.prefix(60).trimmingCharacters(in: .whitespacesAndNewlines)
-            title = snippet.isEmpty ? "Tweet by \(authorName)" : "\(authorName): \(snippet)…"
-        } else {
-            title = "Tweet"
-        }
-
+        // Intentionally leave title nil: the tweet body has no natural title, so
+        // the summary AI generates a concise one. The author handle is displayed
+        // separately in the card's meta line, so synthesizing "{author}: {snippet}"
+        // here would duplicate that and produce long, unreadable headlines.
         return ExtractedContent(
-            title: title,
+            title: nil,
             authorName: authorHandle.map { "@\($0)" } ?? authorName,
             textContent: textContent.isEmpty ? nil : textContent,
             thumbnailURL: thumbnailURL,
@@ -179,16 +175,10 @@ struct TwitterProcessor: ContentProcessor {
         let textContent = SocialPostCodec.encode(post)
         let wordCount = textContent.split(separator: " ").count
 
-        let title: String
-        if let authorName {
-            let snippet = tweetText.prefix(60).trimmingCharacters(in: .whitespacesAndNewlines)
-            title = snippet.isEmpty ? "Tweet by \(authorName)" : "\(authorName): \(snippet)…"
-        } else {
-            title = "Tweet"
-        }
-
+        // See rationale in fetchViaSyndication — AI generates a concise title
+        // for tweets rather than synthesizing one from author + snippet.
         return ExtractedContent(
-            title: title,
+            title: nil,
             authorName: handle.map { "@\($0)" } ?? authorName,
             textContent: textContent.isEmpty ? nil : textContent,
             thumbnailURL: nil,

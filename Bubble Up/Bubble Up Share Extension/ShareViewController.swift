@@ -200,7 +200,18 @@ class ShareViewController: UIViewController {
             do {
                 let metadata = try await provider.startFetchingMetadata(for: url)
 
-                if let title = metadata.title, stateHolder.title.isEmpty {
+                // LPMetadataProvider returns useless SEO titles for X/Twitter
+                // ("author (@handle) 10K likes · 1K replies") and similar for
+                // Reddit. Skip title auto-fill for those so the user sees a
+                // clean placeholder and AI can generate a real title after save.
+                let host = url.host?.lowercased() ?? ""
+                let isSocialHost =
+                    host == "x.com" || host.hasSuffix(".x.com") ||
+                    host == "twitter.com" || host.hasSuffix(".twitter.com") ||
+                    host == "reddit.com" || host.hasSuffix(".reddit.com") ||
+                    host == "redd.it" || host.hasSuffix(".redd.it")
+
+                if let title = metadata.title, stateHolder.title.isEmpty, !isSocialHost {
                     stateHolder.title = title
                 }
 

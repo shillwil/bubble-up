@@ -16,7 +16,8 @@ struct OpenAISummaryProvider: SummaryProvider {
         let responseText = try await callOpenAI(
             model: "gpt-4o",
             systemPrompt: "You are a concise article summarizer. Always respond with valid JSON only.",
-            userPrompt: prompt
+            userPrompt: prompt,
+            responseFormat: Self.linkSummarySchema
         )
         return try parseSummaryResult(from: responseText)
     }
@@ -26,14 +27,42 @@ struct OpenAISummaryProvider: SummaryProvider {
         let responseText = try await callOpenAI(
             model: "gpt-4o",
             systemPrompt: "You are a book summary expert. Always respond with valid JSON only.",
-            userPrompt: prompt
+            userPrompt: prompt,
+            responseFormat: nil
         )
         return try parseBookSummaryResult(from: responseText)
     }
 
+    // MARK: - Response schemas
+
+    /// Structured-output schema for the link summary. Forces the model to
+    /// include a `title` field (previously some providers silently dropped it).
+    private static let linkSummarySchema: [String: Any] = [
+        "type": "json_schema",
+        "json_schema": [
+            "name": "LinkSummary",
+            "strict": true,
+            "schema": [
+                "type": "object",
+                "additionalProperties": false,
+                "properties": [
+                    "title": ["type": "string", "description": "A concise 3-8 word title capturing the article's subject."],
+                    "summary": ["type": "string", "description": "A 1-2 sentence summary of the article."],
+                    "bullets": [
+                        "type": "array",
+                        "items": ["type": "string"],
+                        "description": "Exactly 3 bullet points highlighting key insights."
+                    ],
+                    "estimatedReadTime": ["type": ["integer", "null"], "description": "Estimated read time in minutes."]
+                ],
+                "required": ["title", "summary", "bullets", "estimatedReadTime"]
+            ]
+        ]
+    ]
+
     // MARK: - API Call
 
-    private func callOpenAI(model: String, systemPrompt: String, userPrompt: String) async throws -> String {
+    private func callOpenAI(model: String, systemPrompt: String, userPrompt: String, responseFormat: [String: Any]?) async throws -> String {
         let url = URL(string: "https://api.openai.com/v1/chat/completions")!
 
         var request = URLRequest(url: url)
@@ -44,7 +73,7 @@ struct OpenAISummaryProvider: SummaryProvider {
 
         let body: [String: Any] = [
             "model": model,
-            "response_format": ["type": "json_object"],
+            "response_format": responseFormat ?? ["type": "json_object"],
             "messages": [
                 ["role": "system", "content": systemPrompt],
                 ["role": "user", "content": userPrompt]
@@ -105,7 +134,11 @@ struct OpenAISummaryProvider: SummaryProvider {
 
     private func parseSummaryResult(from text: String) throws -> SummaryResult {
         guard let data = text.data(using: .utf8) else { throw SummaryProviderError.decodingFailed }
-        return try JSONDecoder().decode(SummaryResult.self, from: data)
+        let result = try JSONDecoder().decode(SummaryResult.self, from: data)
+        if result.title == nil || result.title?.isEmpty == true {
+            print("⚠️ [OpenAI] missing/empty title in response — raw text: \(text.prefix(400))")
+        }
+        return result
     }
 
     private func parseBookSummaryResult(from text: String) throws -> BookSummaryResult {

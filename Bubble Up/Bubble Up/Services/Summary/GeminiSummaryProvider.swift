@@ -16,7 +16,7 @@ struct GeminiSummaryProvider: SummaryProvider {
         let model = Config.defaultLinkSummaryModel
         let prompt = buildLinkSummaryPrompt(content: content, title: title, url: url)
 
-        let responseText = try await callGeminiAPI(model: model, prompt: prompt)
+        let responseText = try await callGeminiAPI(model: model, prompt: prompt, responseSchema: Self.linkSummarySchema)
         return try parseSummaryResult(from: responseText)
     }
 
@@ -24,13 +24,33 @@ struct GeminiSummaryProvider: SummaryProvider {
         let model = Config.defaultLinkSummaryModel // Use flash for BYOK book summaries too
         let prompt = buildBookSummaryPrompt(title: title, author: author, length: length)
 
-        let responseText = try await callGeminiAPI(model: model, prompt: prompt)
+        let responseText = try await callGeminiAPI(model: model, prompt: prompt, responseSchema: nil)
         return try parseBookSummaryResult(from: responseText)
     }
 
+    // MARK: - Response schema
+
+    /// Forces Gemini to include every field — previously the model would
+    /// sometimes drop `title` without a schema.
+    private static let linkSummarySchema: [String: Any] = [
+        "type": "object",
+        "properties": [
+            "title": ["type": "string", "description": "A concise 3-8 word title capturing the article's subject."],
+            "summary": ["type": "string", "description": "A 1-2 sentence summary of the article."],
+            "bullets": [
+                "type": "array",
+                "items": ["type": "string"],
+                "description": "Exactly 3 bullet points highlighting key insights."
+            ],
+            "estimatedReadTime": ["type": "integer", "description": "Estimated read time in minutes."]
+        ],
+        "required": ["title", "summary", "bullets", "estimatedReadTime"],
+        "propertyOrdering": ["title", "summary", "bullets", "estimatedReadTime"]
+    ]
+
     // MARK: - API Call
 
-    private func callGeminiAPI(model: String, prompt: String) async throws -> String {
+    private func callGeminiAPI(model: String, prompt: String, responseSchema: [String: Any]?) async throws -> String {
         let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent?key=\(apiKey)")!
 
         var request = URLRequest(url: url)
@@ -38,13 +58,16 @@ struct GeminiSummaryProvider: SummaryProvider {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 30
 
+        var generationConfig: [String: Any] = ["responseMimeType": "application/json"]
+        if let schema = responseSchema {
+            generationConfig["responseSchema"] = schema
+        }
+
         let body: [String: Any] = [
             "contents": [
                 ["parts": [["text": prompt]]]
             ],
-            "generationConfig": [
-                "responseMimeType": "application/json"
-            ]
+            "generationConfig": generationConfig
         ]
 
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -139,7 +162,11 @@ struct GeminiSummaryProvider: SummaryProvider {
             throw SummaryProviderError.decodingFailed
         }
         do {
-            return try JSONDecoder().decode(SummaryResult.self, from: data)
+            let result = try JSONDecoder().decode(SummaryResult.self, from: data)
+            if result.title == nil || result.title?.isEmpty == true {
+                print("⚠️ [Gemini] missing/empty title in response — raw text: \(text.prefix(400))")
+            }
+            return result
         } catch {
             throw SummaryProviderError.decodingFailed
         }

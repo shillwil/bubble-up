@@ -157,8 +157,15 @@ actor RequestScheduler {
             // Short-content bypass: memes, one-liners, and image-only tweets/reddit
             // posts shouldn't be summarized — rendering the extracted content verbatim
             // gives a better UX than a one-bullet "summary" or a failure card.
+            //
+            // But only bypass when we already have a real title. Otherwise we still
+            // need the AI call so it can generate a concise title; leaving the item
+            // stuck at "Loading..." is worse UX than showing bullets for a tweet.
             let wordCount = content.split { $0.isWhitespace }.count
-            let shouldSkipAI = wordCount < Self.shortContentWordThreshold
+            let hasRealTitle = extractedTitle != nil
+                && extractedTitle != LibraryItem.titlePlaceholder
+                && extractedTitle?.isEmpty == false
+            let shouldSkipAI = wordCount < Self.shortContentWordThreshold && hasRealTitle
 
             // Cache the extracted content and metadata back to the item
             await context.perform {
@@ -188,8 +195,9 @@ actor RequestScheduler {
             didSkipAI = shouldSkipAI
         }
 
-        // 3. If we skipped the AI, mark the request done and kick off thumbnail
-        //    download — the reader will render rawContent directly.
+        // 3. If we bypassed the AI (short content with a real title), mark the
+        //    request done and kick off thumbnail download — the reader will
+        //    render rawContent directly.
         if didSkipAI {
             await context.perform {
                 self.markRequestCompleted(context: context, requestID: snapshot.id)
@@ -199,7 +207,12 @@ actor RequestScheduler {
             return
         }
 
-        // 4. Generate summary
+        // 4. Generate summary. For short content that we couldn't bypass (no
+        //    real title yet), we still need the AI call — but only to harvest
+        //    the title. Bullets that just restate a 35-word tweet are noise.
+        let wordsInContent = content.split { $0.isWhitespace }.count
+        let titleOnlyRun = wordsInContent < Self.shortContentWordThreshold
+
         let provider = getSummaryProvider(for: snapshot.requestType)
         let result = try await provider.generateLinkSummary(
             content: content,
@@ -207,16 +220,26 @@ actor RequestScheduler {
             url: urlString
         )
 
-        // 5. Write result back
+        // 5. Write result back. Title-only runs keep status `.skipped` so the
+        //    feed card shows the raw body preview rather than AI bullets.
         await context.perform {
-            self.writeSummaryResult(
-                context: context,
-                itemID: snapshot.libraryItemID,
-                summary: result.summary,
-                bullets: result.bullets,
-                estimatedReadTime: result.estimatedReadTime,
-                aiTitle: result.title
-            )
+            if titleOnlyRun {
+                self.writeTitleOnlyResult(
+                    context: context,
+                    itemID: snapshot.libraryItemID,
+                    aiTitle: result.title,
+                    fallbackSummary: result.summary
+                )
+            } else {
+                self.writeSummaryResult(
+                    context: context,
+                    itemID: snapshot.libraryItemID,
+                    summary: result.summary,
+                    bullets: result.bullets,
+                    estimatedReadTime: result.estimatedReadTime,
+                    aiTitle: result.title
+                )
+            }
             self.markRequestCompleted(context: context, requestID: snapshot.id)
         }
 
@@ -518,15 +541,11 @@ actor RequestScheduler {
         guard let item = try? context.fetch(fetchRequest).first else { return }
 
         // If the title is still the placeholder (user didn't provide one and
-        // extraction didn't find one), prefer the AI-generated title; fall
-        // back to a URL-derived title so items never render as "Loading...".
+        // extraction didn't find one), prefer the AI-generated title. If the
+        // provider dropped the title field, derive one from the summary so we
+        // never land on an ugly URL-derived title when we have better text.
         if item.title == LibraryItem.titlePlaceholder || item.title?.isEmpty == true {
-            let trimmedAI = aiTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let ai = trimmedAI, !ai.isEmpty {
-                item.title = ai
-            } else if let urlString = item.url {
-                item.title = Self.titleFromURL(urlString)
-            }
+            item.title = Self.resolveTitle(aiTitle: aiTitle, summary: summary, url: item.url)
         }
 
         item.summary = summary
@@ -540,6 +559,105 @@ actor RequestScheduler {
             item.syncStatus = SyncStatus.pendingUpdate.rawValue
         }
         try? context.save()
+    }
+
+    /// Write only a title to the item without storing the AI summary/bullets.
+    /// Used for short social posts where a bullet "summary" of the tweet body
+    /// would just restate it — but we still want a concise AI-generated title.
+    /// Leaves `summaryStatus` as `.skipped` so the feed card renders the raw
+    /// body preview (see FeedCardView `.skipped` branch).
+    private nonisolated func writeTitleOnlyResult(
+        context: NSManagedObjectContext,
+        itemID: UUID,
+        aiTitle: String?,
+        fallbackSummary: String
+    ) {
+        let fetchRequest = LibraryItem.fetchRequest()
+        fetchRequest.predicate = NSPredicate(format: "id == %@", itemID as CVarArg)
+        fetchRequest.fetchLimit = 1
+        guard let item = try? context.fetch(fetchRequest).first else { return }
+
+        if item.title == LibraryItem.titlePlaceholder || item.title?.isEmpty == true {
+            item.title = Self.resolveTitle(aiTitle: aiTitle, summary: fallbackSummary, url: item.url)
+        }
+        // Explicitly keep `.skipped` — the bullets / summary text aren't stored.
+        item.summaryStatusEnum = .skipped
+        item.updatedAt = Date()
+        if item.syncStatus == SyncStatus.synced.rawValue {
+            item.syncStatus = SyncStatus.pendingUpdate.rawValue
+        }
+        try? context.save()
+    }
+
+    /// Resolution order: AI-provided title → first clause of the summary →
+    /// URL-derived hostname. Used by both full and title-only writes so they
+    /// share a single source of truth.
+    private nonisolated static func resolveTitle(aiTitle: String?, summary: String, url: String?) -> String {
+        let trimmedAI = aiTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let ai = trimmedAI, !ai.isEmpty {
+            return ai
+        }
+        if let derived = titleFromSummary(summary), !derived.isEmpty {
+            return derived
+        }
+        if let urlString = url {
+            return titleFromURL(urlString)
+        }
+        return LibraryItem.titlePlaceholder
+    }
+
+    /// Extracts a concise, headline-style title from a summary sentence.
+    /// Aims for 3-6 words capped at ~40 chars so the fallback reads like a
+    /// real title instead of a truncated sentence. This is a safety net for
+    /// providers that drop the AI-supplied `title` field.
+    private nonisolated static func titleFromSummary(_ summary: String) -> String? {
+        let trimmed = summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        // First sentence (split on ".", "!", "?")
+        let terminators: Set<Character> = [".", "!", "?"]
+        let firstSentence = String(trimmed.prefix(while: { !terminators.contains($0) }))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let source = firstSentence.isEmpty ? trimmed : firstSentence
+
+        // Drop leading throat-clearing ("The article discusses", "This post is about")
+        // so the title leads with content.
+        let lowered = source.lowercased()
+        let leadsToStrip = [
+            "the article discusses ", "this article discusses ",
+            "the article is about ", "this article is about ",
+            "the post discusses ", "this post discusses ",
+            "the post is about ", "this post is about ",
+            "the tweet states that ", "the tweet says that ",
+            "the author claims that ", "the author reports that ",
+            "it is reported that ", "reportedly "
+        ]
+        var head = source
+        for prefix in leadsToStrip where lowered.hasPrefix(prefix) {
+            head = String(source.dropFirst(prefix.count))
+            break
+        }
+
+        // Take 3-6 words, cap at ~40 chars.
+        let words = head.split(separator: " ", omittingEmptySubsequences: true)
+        guard !words.isEmpty else { return nil }
+
+        var result = ""
+        for (idx, word) in words.enumerated() {
+            let candidate = result.isEmpty ? String(word) : result + " " + word
+            if idx >= 6 || candidate.count > 40 {
+                break
+            }
+            result = candidate
+            if idx >= 2, ",;:".contains(word.last ?? " ") {
+                result.removeLast() // drop trailing punctuation
+                break
+            }
+        }
+        if result.isEmpty { return nil }
+        // Add ellipsis if we cut off mid-thought.
+        if words.count > result.split(separator: " ").count { result += "…" }
+        return result
     }
 
     private nonisolated func writeBookSummaryResult(
