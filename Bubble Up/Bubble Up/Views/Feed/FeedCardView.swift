@@ -7,6 +7,8 @@ struct FeedCardView: View {
     var bottomInset: CGFloat = 0
     @Environment(LibraryItemsRepository.self) private var repository
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .largeTitle) private var titleSize: CGFloat = 36
     @State private var showArticleDetail = false
     @State private var showDeleteConfirmation = false
 
@@ -24,13 +26,18 @@ struct FeedCardView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Spacer(minLength: geo.size.height * 0.35)
 
-                    // Title
+                    // Title — scales via @ScaledMetric tied to the largeTitle text
+                    // style curve. dynamicTypeSize is observed so SwiftUI rebuilds
+                    // the body whenever the user changes the system text size.
                     Text(item.title ?? "Untitled")
-                        .font(.system(.largeTitle, design: .serif, weight: .bold))
+                        .font(.system(size: titleSize, weight: .bold, design: .serif))
                         .foregroundColor(Color.bubbleUpText(for: colorScheme))
                         .tracking(-0.5)
                         .lineLimit(3)
                         .padding(.bottom, 12)
+                        .onAppear {
+                            print("📏 [FeedCard] dynamicTypeSize=\(dynamicTypeSize) scaledTitleSize=\(titleSize) (base 36)")
+                        }
 
                     // Meta line
                     MetaLine(

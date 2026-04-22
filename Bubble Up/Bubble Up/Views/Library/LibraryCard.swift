@@ -5,6 +5,8 @@ struct LibraryCard: View {
     @ObservedObject var item: LibraryItem
     @Environment(LibraryItemsRepository.self) private var repository
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .headline) private var titleSize: CGFloat = 15
     @State private var showDeleteConfirmation = false
 
     var body: some View {
@@ -47,7 +49,7 @@ struct LibraryCard: View {
 
             // Title
             Text(item.title ?? "Untitled")
-                .font(.system(.subheadline, design: .serif, weight: .semibold))
+                .font(.system(size: titleSize, weight: .semibold, design: .serif))
                 .foregroundColor(Color.bubbleUpText(for: colorScheme))
                 .lineLimit(3)
                 .padding(.bottom, 4)
