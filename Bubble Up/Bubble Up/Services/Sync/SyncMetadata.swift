@@ -25,4 +25,17 @@ enum SyncMetadata {
     static func markInitialSyncComplete(for userID: String) {
         defaults.set(true, forKey: key("initialSyncDone", for: userID))
     }
+
+    /// One-time repair for the pre-fix upsertItem race (see SyncEngine): any
+    /// locally-completed item whose syncStatus is `.synced` may actually be
+    /// stranded — the completion never reached Supabase because the push's
+    /// final block buried it under a stale .synced flag. Force a single
+    /// re-push pass per user.
+    static func needsCompletedItemsHeal(for userID: String) -> Bool {
+        !defaults.bool(forKey: key("completedItemsHealDone", for: userID))
+    }
+
+    static func markCompletedItemsHealDone(for userID: String) {
+        defaults.set(true, forKey: key("completedItemsHealDone", for: userID))
+    }
 }

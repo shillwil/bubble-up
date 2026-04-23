@@ -31,6 +31,14 @@ actor SyncEngine {
             SyncMetadata.markInitialSyncComplete(for: userID)
         }
 
+        // One-time repair for the pre-fix upsertItem race. Items whose summary
+        // completed locally but whose completion push got buried under a stale
+        // .synced flag will otherwise never re-push. Re-queue them once.
+        if SyncMetadata.needsCompletedItemsHeal(for: userID) {
+            await requeueCompletedItemsForHeal()
+            SyncMetadata.markCompletedItemsHealDone(for: userID)
+        }
+
         // Re-queue synced items that have local files but missing thumbnailStoragePath
         // (file/thumbnail upload may have failed on a previous sync)
         await requeueItemsMissingFiles()
@@ -164,16 +172,30 @@ actor SyncEngine {
         try await pushPages(for: snapshot.id, context: context)
         try await pushComments(for: snapshot.id, context: context)
 
-        // Mark as synced
-        await context.perform {
+        // Mark as synced — but only if the item hasn't been mutated by another
+        // context while this push was in flight. If the scheduler wrote a
+        // completed summary mid-push, the DTO we just sent is stale; forcing
+        // .synced here would bury the newer local data under ObjectTrumpMergePolicy
+        // (syncStatus wins for this context, summary/status keep the store's
+        // fresh values) and no future push would ever pick it up.
+        //
+        // Use a fresh context so the updatedAt comparison reads the store's
+        // current state rather than this push's cached snapshot view.
+        let finalContext = persistenceController.newBackgroundContext()
+        await finalContext.perform {
             let fetch = LibraryItem.fetchRequest()
             fetch.predicate = NSPredicate(format: "id == %@", snapshot.id as CVarArg)
-            if let item = try? context.fetch(fetch).first {
-                item.syncStatus = SyncStatus.synced.rawValue
+            if let item = try? finalContext.fetch(fetch).first {
+                let currentUpdatedAt = item.updatedAt ?? .distantPast
+                if currentUpdatedAt > snapshot.updatedAt {
+                    item.syncStatus = SyncStatus.pendingUpdate.rawValue
+                } else {
+                    item.syncStatus = SyncStatus.synced.rawValue
+                }
                 if let storagePath = dto.thumbnailStoragePath {
                     item.thumbnailStoragePath = storagePath
                 }
-                try? context.save()
+                try? finalContext.save()
             }
         }
     }
@@ -325,6 +347,14 @@ actor SyncEngine {
                     let localUpdated = item.updatedAt ?? .distantPast
                     if dto.updatedAt > localUpdated {
                         self.applyDTO(dto, to: item)
+                    } else if dto.updatedAt < localUpdated,
+                              Self.isTerminal(item.summaryStatus),
+                              !Self.isTerminal(dto.summaryStatus) {
+                        // Heal path: local has a completed/failed summary that
+                        // the server never received (e.g., items stranded by the
+                        // pre-fix upsertItem race). Re-queue for push so the
+                        // next cycle uploads the real state.
+                        item.syncStatus = SyncStatus.pendingUpdate.rawValue
                     }
                 } else {
                     // New item from another device
@@ -588,6 +618,16 @@ actor SyncEngine {
         mimeType?.hasPrefix("video/") ?? false
     }
 
+    /// Terminal summary states — the item is done moving, for better or worse.
+    /// `.pending` and `.generating` are in-flight and shouldn't outrank each
+    /// other during pull-side conflict resolution.
+    private nonisolated static func isTerminal(_ status: String?) -> Bool {
+        switch status {
+        case "completed", "failed", "skipped": return true
+        default: return false
+        }
+    }
+
     // MARK: - Initial Sync Helper
 
     private func markAllItemsForUpload() async {
@@ -601,6 +641,30 @@ actor SyncEngine {
                 }
             }
             try? context.save()
+        }
+    }
+
+    /// Re-queues locally-completed items marked `.synced` so the one-time heal
+    /// pass can re-push them. Some will be no-ops on the server, but the truly
+    /// stranded ones (summary completed locally, still `generating` on Supabase)
+    /// finally get their completion delivered.
+    private func requeueCompletedItemsForHeal() async {
+        let context = persistenceController.newBackgroundContext()
+        await context.perform {
+            let fetch = LibraryItem.fetchRequest()
+            fetch.predicate = NSPredicate(
+                format: "syncStatus == %@ AND (summaryStatus == %@ OR summaryStatus == %@ OR summaryStatus == %@)",
+                SyncStatus.synced.rawValue,
+                SummaryStatus.completed.rawValue,
+                SummaryStatus.failed.rawValue,
+                SummaryStatus.skipped.rawValue
+            )
+            guard let items = try? context.fetch(fetch), !items.isEmpty else { return }
+            for item in items {
+                item.syncStatus = SyncStatus.pendingUpdate.rawValue
+            }
+            try? context.save()
+            print("[SyncEngine] Heal: re-queued \(items.count) completed items for push")
         }
     }
 

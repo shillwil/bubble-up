@@ -101,23 +101,6 @@ struct LoginView: View {
                     }
                     .disabled(isLoading || email.isEmpty || password.isEmpty)
 
-                    // Apple Sign In
-                    Button {
-                        signInWithApple()
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "apple.logo")
-                            Text("SIGN IN WITH APPLE")
-                                .font(.buttonText())
-                                .tracking(1)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(Color.bubbleUpText(for: colorScheme))
-                        .foregroundColor(Color.bubbleUpBackground(for: colorScheme))
-                        .clipShape(RoundedRectangle(cornerRadius: BubbleUpTheme.cornerRadiusSm))
-                    }
-
                     // Sign Up Link
                     Button {
                         showSignup = true
