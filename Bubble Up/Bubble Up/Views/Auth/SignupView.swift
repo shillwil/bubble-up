@@ -81,6 +81,8 @@ struct SignupView: View {
             .padding(.horizontal, BubbleUpTheme.paddingHorizontal)
         }
         .background(Color.bubbleUpBackground(for: colorScheme))
+        .scrollDismissesKeyboard(.interactively)
+        .keyboardDoneToolbar()
         .navigationBarBackButtonHidden(false)
     }
 

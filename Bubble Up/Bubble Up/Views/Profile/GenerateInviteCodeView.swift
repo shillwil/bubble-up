@@ -106,6 +106,8 @@ struct GenerateInviteCodeView: View {
             .padding(.top, 24)
         }
         .background(Color.bubbleUpBackground(for: colorScheme))
+        .scrollDismissesKeyboard(.interactively)
+        .keyboardDoneToolbar()
     }
 
     private func generateCode() {

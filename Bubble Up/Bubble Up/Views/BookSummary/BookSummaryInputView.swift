@@ -73,6 +73,8 @@ struct BookSummaryInputView: View {
             .padding(.top, 24)
         }
         .background(Color.bubbleUpBackground(for: colorScheme))
+        .scrollDismissesKeyboard(.interactively)
+        .keyboardDoneToolbar()
         .navigationDestination(item: $generatedItemID) { itemID in
             BookSummaryView(
                 itemID: itemID,

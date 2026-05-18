@@ -1,5 +1,10 @@
 import SwiftUI
 
+private enum ShareExtensionField: Hashable {
+    case title
+    case tags
+}
+
 struct ShareExtensionView: View {
     @Binding var sharedURL: String
     @Binding var sharedTitle: String
@@ -12,6 +17,7 @@ struct ShareExtensionView: View {
     @State private var tagsText: String = ""
     @State private var editableTitle: String = ""
     @State private var isSaved = false
+    @FocusState private var focusedField: ShareExtensionField?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -26,7 +32,15 @@ struct ShareExtensionView: View {
             // Bottom sheet
             sheetContent
         }
-        .ignoresSafeArea(edges: .top)
+        .ignoresSafeArea(.container, edges: .top)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") { focusedField = nil }
+                    .foregroundColor(Color(hex: 0xDA2D16))
+                    .font(.system(size: 16, weight: .semibold))
+            }
+        }
     }
 
     private var sheetContent: some View {
@@ -93,6 +107,9 @@ struct ShareExtensionView: View {
                     .font(.system(size: 15))
                     .foregroundColor(Color(hex: 0x1A1A1A))
                     .autocorrectionDisabled()
+                    .focused($focusedField, equals: .title)
+                    .submitLabel(.next)
+                    .onSubmit { focusedField = .tags }
                     .padding(.bottom, 8)
                     .overlay(alignment: .bottom) {
                         Rectangle()
@@ -112,6 +129,9 @@ struct ShareExtensionView: View {
                 TextField("tech, design, reading…", text: $tagsText)
                     .font(.system(size: 15))
                     .foregroundColor(Color(hex: 0x1A1A1A))
+                    .focused($focusedField, equals: .tags)
+                    .submitLabel(.done)
+                    .onSubmit { focusedField = nil }
                     .padding(.bottom, 8)
                     .overlay(alignment: .bottom) {
                         Rectangle()
@@ -156,7 +176,7 @@ struct ShareExtensionView: View {
         .background(
             RoundedRectangle(cornerRadius: 16)
                 .fill(Color(hex: 0xF5F4F0))
-                .ignoresSafeArea(edges: .bottom)
+                .ignoresSafeArea(.container, edges: .bottom)
         )
         .onAppear {
             if editableTitle.isEmpty { editableTitle = sharedTitle }

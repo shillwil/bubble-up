@@ -118,6 +118,8 @@ struct LoginView: View {
                 .padding(.horizontal, BubbleUpTheme.paddingHorizontal)
             }
             .background(Color.bubbleUpBackground(for: colorScheme))
+            .scrollDismissesKeyboard(.interactively)
+            .keyboardDoneToolbar()
             .navigationDestination(isPresented: $showSignup) {
                 SignupView()
             }

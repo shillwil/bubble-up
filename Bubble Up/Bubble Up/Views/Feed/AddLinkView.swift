@@ -126,12 +126,14 @@ struct AddLinkView: View {
                 .padding(.top, 24)
             }
             .background(Color.bubbleUpBackground(for: colorScheme))
+            .scrollDismissesKeyboard(.interactively)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Cancel") { dismiss() }
                         .foregroundColor(BubbleUpTheme.primary)
                 }
             }
+            .keyboardDoneToolbar()
             .overlay {
                 if showDuplicateMessage {
                     VStack(spacing: 8) {

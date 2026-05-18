@@ -80,18 +80,6 @@ struct BookSummaryView: View {
             }
         }
         .background(Color.bubbleUpBackground(for: colorScheme))
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Done") {
-                    if let onDone {
-                        onDone()
-                    } else {
-                        dismiss()
-                    }
-                }
-                .foregroundColor(BubbleUpTheme.primary)
-            }
-        }
     }
 
     // MARK: - Header
